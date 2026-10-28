@@ -16,14 +16,15 @@ de decisiones es `docs/H1-MODELO-DATOS.md` y el detalle operativo está
 en `apps/api/src/db/README.md`. Las puertas obligatorias de H2 están
 registradas en `docs/H1-MODELO-DATOS.md` (§11).
 
-## Estado: Hito H0 (preparación del proyecto)
+## Estado: Hito H0 (preparación del proyecto, histórico)
 
-Este repositorio contiene únicamente el arranque reproducible del
-proyecto. **No hay funcionalidad de negocio, ni base de datos, ni
-autenticación, ni endpoints de negocio, ni OCR, ni carga documental,
-ni colas, ni exportaciones.** Esos hitos (H1 en adelante) requieren
+H0 fue únicamente el arranque reproducible del proyecto. **En H0 no
+había funcionalidad de negocio, ni base de datos, ni autenticación, ni
+endpoints de negocio, ni OCR, ni carga documental, ni colas, ni
+exportaciones.** Los hitos posteriores (H1 en adelante) requieren
 autorización explícita separada. Las maquetas HTML de diseño no se
-convirtieron en componentes React en este hito.
+convirtieron en componentes React en este hito. El estado actual del
+proyecto es el de la sección H1 anterior.
 
 La documentación normativa vive en `docs/` (Misión 1, Misión 2,
 Fase 2.2 y `PLAN-MISION-3.md`).
@@ -54,7 +55,7 @@ npm run dev:api   # API, puerto 3001, solo endpoint /health de scaffold
 
 ```
 apps/web/         # React + TypeScript + Vite + Tailwind + shadcn/ui (base) + Lucide
-apps/api/         # Fastify + TypeScript (solo /health en H0)
+apps/api/         # Fastify + TypeScript (endpoints: solo /health; módulo db/ con el modelo H1)
 packages/shared/  # Tipos y constantes compartidas (sin reglas de negocio)
 docs/             # Especificación y diseño aprobados
 ```
@@ -66,5 +67,7 @@ con las pantallas, no en este hito.
 ## Variables de entorno
 
 Copiar `.env.example` a `.env` si hace falta cambiar puertos. El
-archivo de ejemplo no contiene secretos y `DATABASE_URL` está
-reservada para H1: en H0 no se crea ni se migra ninguna base de datos.
+archivo de ejemplo no contiene secretos. `DATABASE_URL` se usa desde
+H1 (`db:seed` y, desde H2-validación, `db:migrate`) únicamente contra
+la base local autorizada `docflow_dev`; nunca se versiona ni se
+publica en logs o informes.
