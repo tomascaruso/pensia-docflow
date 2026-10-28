@@ -25,6 +25,14 @@ conexión, autenticación, endpoints ni permisos ejecutables en esta etapa.
   antes de `psql`; `verify-h2.sql` §0 y la pre-vuelo de
   `concurrent-grant-test.sh` validan además el destino REAL tras
   conectar (base + servidor local según `inet_server_addr()`).
+- `verify-connection.ts` (corrección H2): verificación posterior a
+  la conexión reutilizable para `seed.ts` y `migrate.ts`, antes de
+  cualquier escritura: base `docflow_dev` + localidad del servidor
+  (`inet_server_addr()` loopback para TCP, NULL solo para socket
+  Unix, con cruce contra el tipo de conexión derivado del cliente).
+  Equivalente a §0 y a la pre-vuelo en todos los casos realizables
+  (ver el encabezado del módulo); la versión TS es más estricta
+  solo en el caso irrealizable "TCP sin dirección reportada".
   Corrección final H2: la guarda valida también los parámetros de
   consulta que podrían cambiar el destino (`host`, `hostaddr`, `port`,
   `dbname`, `service`) y rechaza variables de entorno de destino

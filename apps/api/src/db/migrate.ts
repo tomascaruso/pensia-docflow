@@ -8,7 +8,9 @@
  * Protección de destino (igual que `seed.ts`): antes de conectar, la
  * guarda rechaza cualquier DATABASE_URL que no apunte a la base local
  * autorizada (`docflow_dev` por destino local); tras conectar, se
- * verifica `current_database()` y se aborta sin escribir si no coincide.
+ * verifica `current_database()` Y la localidad del servidor
+ * (`inet_server_addr()` loopback, o NULL solo para socket Unix) y se
+ * aborta sin escribir si no se demuestra destino local.
  *
  * Uso (tras autorización y con la instancia lista):
  *   DATABASE_URL=postgresql://usuario@127.0.0.1:5432/docflow_dev npm run db:migrate
@@ -19,10 +21,10 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import {
-  AUTHORIZED_SEED_DATABASE,
   assertNoConflictingEnv,
   assertSeedTarget,
 } from "./seed-guard.js";
+import { verifyLocalConnection } from "./verify-connection.js";
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
@@ -45,16 +47,15 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString });
   const db = drizzle(pool);
   try {
-    const { rows } = await db.execute(
-      sql`SELECT current_database() AS database`,
-    );
-    const actual = (rows[0] as { database?: unknown } | undefined)?.database;
-    if (actual !== AUTHORIZED_SEED_DATABASE) {
-      throw new Error(
-        `migrate: la base verificada (${String(actual)}) no es la autorizada ` +
-          `(${AUTHORIZED_SEED_DATABASE}). Abortado sin escribir.`,
+    await verifyLocalConnection(async () => {
+      const { rows } = await db.execute(
+        sql`SELECT current_database() AS database, inet_server_addr() AS server_addr`,
       );
-    }
+      const row = rows[0] as
+        | { database?: unknown; server_addr?: unknown }
+        | undefined;
+      return { database: row?.database, serverAddr: row?.server_addr };
+    }, connectionString);
     const migrationsFolder = fileURLToPath(
       new URL("../../drizzle", import.meta.url),
     );
