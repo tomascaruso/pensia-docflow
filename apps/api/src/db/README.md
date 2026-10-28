@@ -25,6 +25,12 @@ conexión, autenticación, endpoints ni permisos ejecutables en esta etapa.
   antes de `psql`; `verify-h2.sql` §0 y la pre-vuelo de
   `concurrent-grant-test.sh` validan además el destino REAL tras
   conectar (base + servidor local según `inet_server_addr()`).
+  Corrección final H2: la guarda valida también los parámetros de
+  consulta que podrían cambiar el destino (`host`, `hostaddr`, `port`,
+  `dbname`, `service`) y rechaza variables de entorno de destino
+  (`PGHOST`, `PGHOSTADDR`, `PGPORT`, `PGDATABASE`, `PGSERVICE`,
+  `PGSERVICEFILE`); cada fuente debe demostrar por sí misma que es
+  local y que la base es `docflow_dev`.
 - `scripts/test-destination-gate.sh` (corrección H2): prueba sin
   PostgreSQL real de que un destino no autorizado no invoca `psql` en
   `db:verify` ni en `concurrent-grant-test.sh` (stub de `psql` que solo

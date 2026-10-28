@@ -27,6 +27,7 @@ import * as schema from "./schema.js";
 import { syntheticSeed } from "./seeds/synthetic.js";
 import {
   AUTHORIZED_SEED_DATABASE,
+  assertNoConflictingEnv,
   assertSeedTarget,
 } from "./seed-guard.js";
 
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
   }
   try {
     assertSeedTarget(connectionString);
+    assertNoConflictingEnv();
   } catch (error) {
     console.error(
       `seed: destino no autorizado, no se cargó nada. ${(error as Error).message}`,

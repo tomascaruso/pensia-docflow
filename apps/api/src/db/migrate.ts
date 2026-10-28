@@ -20,6 +20,7 @@ import { sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import {
   AUTHORIZED_SEED_DATABASE,
+  assertNoConflictingEnv,
   assertSeedTarget,
 } from "./seed-guard.js";
 
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
   }
   try {
     assertSeedTarget(connectionString);
+    assertNoConflictingEnv();
   } catch (error) {
     console.error(
       `migrate: destino no autorizado, no se aplicó nada. ${(error as Error).message}`,

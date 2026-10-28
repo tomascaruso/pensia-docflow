@@ -84,4 +84,39 @@ STATUS=$?
 check "concurrencia autorizada invoca psql 3 veces (pre-vuelo + A + B, sin limpieza)" "3" "$(count_invocations)"
 check "concurrencia en modo stub sale 1 (veredicto FAIL esperado sin PG real)" "1" "$STATUS"
 
+# Casos 5-9 (corrección final H2): cada URL con parámetro de evasión debe
+# rechazarse ANTES de invocar psql, en ambos scripts, sin conectarse a
+# ningún servidor real.
+rm -f "$MARKER"
+PATH="$STUB_DIR:$PATH" PSQL_MARKER="$MARKER" DATABASE_URL="postgresql:///docflow_dev?host=db.remoto.example" npm run db:verify >/dev/null 2>&1
+STATUS=$?
+check "db:verify ejemplo auditoría (?host remoto) no invoca psql" "0" "$(count_invocations)"
+[ "$STATUS" -ne 0 ]; check "db:verify ejemplo auditoría sale distinto de 0" "distinto-de-0" "$([ "$STATUS" -ne 0 ] && echo "distinto-de-0" || echo "0")"
+
+rm -f "$MARKER"
+PATH="$STUB_DIR:$PATH" PSQL_MARKER="$MARKER" DATABASE_URL="postgresql://usuario@127.0.0.1:5432/docflow_dev?dbname=otra_base" npm run db:verify >/dev/null 2>&1
+STATUS=$?
+check "db:verify ?dbname=otra no invoca psql" "0" "$(count_invocations)"
+[ "$STATUS" -ne 0 ]; check "db:verify ?dbname=otra sale distinto de 0" "distinto-de-0" "$([ "$STATUS" -ne 0 ] && echo "distinto-de-0" || echo "0")"
+
+rm -f "$MARKER"
+PATH="$STUB_DIR:$PATH" PSQL_MARKER="$MARKER" DATABASE_URL="postgresql://usuario@127.0.0.1:5432/docflow_dev?service=mi_servicio" npm run db:verify >/dev/null 2>&1
+STATUS=$?
+check "db:verify ?service no invoca psql" "0" "$(count_invocations)"
+[ "$STATUS" -ne 0 ]; check "db:verify ?service sale distinto de 0" "distinto-de-0" "$([ "$STATUS" -ne 0 ] && echo "distinto-de-0" || echo "0")"
+
+rm -f "$MARKER"
+PATH="$STUB_DIR:$PATH" PSQL_MARKER="$MARKER" DATABASE_URL="postgresql:///docflow_dev?hostaddr=8.8.8.8" sh scripts/concurrent-grant-test.sh >/dev/null 2>&1
+STATUS=$?
+check "concurrencia ?hostaddr remota no invoca psql" "0" "$(count_invocations)"
+[ "$STATUS" -ne 0 ]; check "concurrencia ?hostaddr remota sale distinto de 0" "distinto-de-0" "$([ "$STATUS" -ne 0 ] && echo "distinto-de-0" || echo "0")"
+
+# Caso 9: variable de entorno de destino (PGHOST) con URL por lo demás
+# válida: la puerta debe rechazar antes de invocar psql.
+rm -f "$MARKER"
+PATH="$STUB_DIR:$PATH" PSQL_MARKER="$MARKER" PGHOST="db.remoto.example" DATABASE_URL="postgresql://usuario@127.0.0.1:5432/docflow_dev" npm run db:verify >/dev/null 2>&1
+STATUS=$?
+check "db:verify con PGHOST definido no invoca psql" "0" "$(count_invocations)"
+[ "$STATUS" -ne 0 ]; check "db:verify con PGHOST definido sale distinto de 0" "distinto-de-0" "$([ "$STATUS" -ne 0 ] && echo "distinto-de-0" || echo "0")"
+
 exit "$FAIL"
