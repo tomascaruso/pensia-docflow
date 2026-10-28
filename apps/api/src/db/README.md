@@ -18,6 +18,17 @@ conexión, autenticación, endpoints ni permisos ejecutables en esta etapa.
 - `scripts/verify-h2.sql` (H2-validación): verificación no destructiva
   del esquema en PostgreSQL real (conteos, restricciones, columna
   generada, aislamiento en lectura y limitaciones confirmadas).
+- `check-destination.ts` (corrección H2): puerta de destino para
+  scripts auxiliares. Reutiliza `assertSeedTarget` y sale 2 si el
+  destino no es local + `docflow_dev`, ANTES de invocar `psql` (sin
+  abrir conexiones y sin imprimir DATABASE_URL). `db:verify` la ejecuta
+  antes de `psql`; `verify-h2.sql` §0 y la pre-vuelo de
+  `concurrent-grant-test.sh` validan además el destino REAL tras
+  conectar (base + servidor local según `inet_server_addr()`).
+- `scripts/test-destination-gate.sh` (corrección H2): prueba sin
+  PostgreSQL real de que un destino no autorizado no invoca `psql` en
+  `db:verify` ni en `concurrent-grant-test.sh` (stub de `psql` que solo
+  registra invocaciones, sin argumentos).
 - `drizzle/`: migraciones generadas con Drizzle Kit (solo SQL versionado,
   sin aplicar en ningún entorno hasta que `db:migrate` se ejecute
   contra una instancia autorizada).
@@ -32,7 +43,8 @@ npm run test               # typecheck cubre los tests; build ya no los emite (v
 npm run build              # usa tsconfig.build.json: excluye *.test.ts de dist/ (B-01 corregido en H2-validación)
 DATABASE_URL=postgresql://usuario@127.0.0.1:5432/docflow_dev npm run db:migrate  # solo base local autorizada
 DATABASE_URL=postgresql://usuario@127.0.0.1:5432/docflow_dev npm run db:seed
-DATABASE_URL=postgresql://usuario@127.0.0.1:5432/docflow_dev npm run db:verify   # no destructivo
+DATABASE_URL=postgresql://usuario@127.0.0.1:5432/docflow_dev npm run db:verify   # no destructivo; puerta previa + §0 post-conexión
+sh scripts/test-destination-gate.sh   # sin PostgreSQL real: verifica la puerta con un stub de psql
 ```
 
 ## Verificaciones pendientes (requieren PostgreSQL, no ejecutadas en H1)

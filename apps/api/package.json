@@ -12,7 +12,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
-    "db:verify": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f scripts/verify-h2.sql"
+    "db:verify": "tsx src/db/check-destination.ts && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f scripts/verify-h2.sql"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",

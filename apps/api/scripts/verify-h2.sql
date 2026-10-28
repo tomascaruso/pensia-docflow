@@ -4,7 +4,15 @@
 --   DATABASE_URL=postgresql://usuario@127.0.0.1:5432/docflow_dev npm run db:verify
 --
 -- Propiedades de seguridad del script:
---   * Se auto-protege: aborta si current_database() no es 'docflow_dev'.
+--   * La invocación vía `npm run db:verify` antepone la puerta
+--     `check-destination.ts`, que rechaza destinos no autorizados ANTES
+--     de invocar `psql` (sin abrir ninguna conexión).
+--   * Tras conectar, la sección 0 valida el destino REAL según el propio
+--     servidor: current_database() = 'docflow_dev' Y servidor local
+--     (inet_server_addr() nulo para socket local, o 127.0.0.1 / ::1 para
+--     TCP local). No confía en el nombre de la base ni en el texto de
+--     DATABASE_URL. Si falla, el script aborta antes de cualquier sonda
+--     de escritura.
 --   * No deja residuos: cada sonda que escribe lo hace dentro de un bloque
 --     DO que inserta, verifica y borra en la misma transacción, o dentro
 --     de un sub-bloque que falla (rollback parcial) cuando se espera un
@@ -18,13 +26,23 @@
 
 \set ON_ERROR_STOP on
 
--- 0. Guarda de destino -------------------------------------------------------
+-- 0. Guarda de destino (post-conexión, antes de cualquier escritura) ---------
+-- inet_server_addr() es NULL para conexiones por socket local (mismo host
+-- por definición) y la IP del servidor para TCP. Solo se acepta socket
+-- local, 127.0.0.1 o ::1. Un túnel local hacia una base remota pasaría
+-- esta comprobación (el endpoint TCP es loopback): ver riesgo residual
+-- documentado en el informe de la corrección.
 DO $$
 BEGIN
   IF current_database() <> 'docflow_dev' THEN
     RAISE EXCEPTION 'verify: base no autorizada: % (se esperaba docflow_dev)', current_database();
   END IF;
-  RAISE NOTICE 'PASS 0: destino verificado (base docflow_dev)';
+  IF inet_server_addr() IS NOT NULL
+     AND inet_server_addr() NOT IN ('127.0.0.1'::inet, '::1'::inet) THEN
+    RAISE EXCEPTION 'verify: servidor no local: % (se esperaba socket local, 127.0.0.1 o ::1)', inet_server_addr();
+  END IF;
+  RAISE NOTICE 'PASS 0: destino real verificado (base docflow_dev, servidor local %)',
+    COALESCE(inet_server_addr()::text, '(socket local)');
 END $$;
 
 -- 1. Conteos de seeds ---------------------------------------------------------

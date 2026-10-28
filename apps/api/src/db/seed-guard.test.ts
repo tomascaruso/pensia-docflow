@@ -65,3 +65,77 @@ describe("seed-guard (sin base de datos)", () => {
     expect(AUTHORIZED_SEED_DATABASE).toBe("docflow_dev");
   });
 });
+
+describe("seed-guard: rechazos exigidos por la corrección H2 (sin base de datos)", () => {
+  it("rechaza direcciones privadas que no son loopback", () => {
+    for (const host of [
+      "10.0.0.5",
+      "172.16.0.9",
+      "172.31.255.255",
+      "192.168.0.1",
+      "169.254.1.1",
+    ]) {
+      expect(() =>
+        assertSeedTarget(`postgresql://usuario@${host}:5432/docflow_dev`),
+      ).toThrow(/host no autorizado/);
+    }
+  });
+
+  it("rechaza 0.0.0.0, :: y direcciones link-local IPv6", () => {
+    expect(() =>
+      assertSeedTarget("postgresql://usuario@0.0.0.0:5432/docflow_dev"),
+    ).toThrow(/host no autorizado/);
+    expect(() =>
+      assertSeedTarget("postgresql://usuario@[::]:5432/docflow_dev"),
+    ).toThrow(/host no autorizado/);
+    expect(() =>
+      assertSeedTarget("postgresql://usuario@[fe80::1]:5432/docflow_dev"),
+    ).toThrow(/host no autorizado/);
+  });
+
+  it("rechaza nombres de host que no son literalmente loopback", () => {
+    for (const host of ["postgres", "db", "db.internal", "localhost.localdomain"]) {
+      expect(() =>
+        assertSeedTarget(`postgresql://usuario@${host}:5432/docflow_dev`),
+      ).toThrow(/host no autorizado/);
+    }
+  });
+
+  it("rechaza variantes estrictas de localhost (mayúsculas, punto final)", () => {
+    // Node no normaliza a minúsculas el host de esquemas no especiales:
+    // solo las formas exactas en minúsculas están permitidas.
+    expect(() =>
+      assertSeedTarget("postgresql://usuario@LOCALHOST:5432/docflow_dev"),
+    ).toThrow(/host no autorizado/);
+    expect(() =>
+      assertSeedTarget("postgresql://usuario@localhost.:5432/docflow_dev"),
+    ).toThrow(/host no autorizado/);
+  });
+
+  it("rechaza confusión por userinfo (host real distinto del aparente)", () => {
+    expect(() =>
+      assertSeedTarget(
+        "postgresql://usuario@127.0.0.1@db.remoto.example:5432/docflow_dev",
+      ),
+    ).toThrow(/host no autorizado/);
+  });
+
+  it("rechaza URLs inválidas, vacías o con protocolo no autorizado", () => {
+    expect(() => assertSeedTarget("")).toThrow();
+    expect(() => assertSeedTarget("postgres://")).toThrow();
+    expect(() =>
+      assertSeedTarget("http://127.0.0.1:5432/docflow_dev"),
+    ).toThrow(/protocolo no autorizado/);
+    expect(() =>
+      assertSeedTarget("postgresql://usuario@127.0.0.1:5432/otra_base"),
+    ).toThrow(/base no autorizada/);
+  });
+
+  it("acepta parámetros de consulta que no cambian el destino", () => {
+    expect(() =>
+      assertSeedTarget(
+        "postgresql://usuario@127.0.0.1:5432/docflow_dev?sslmode=require",
+      ),
+    ).not.toThrow();
+  });
+});
