@@ -6,6 +6,16 @@ deterministas → duplicados → revisión humana → aprobación → exportaci�
 CSV → auditoría. Principio rector: la IA extrae; las reglas
 deterministas validan; una persona revisa y decide.
 
+## Estado: Hito H1 (modelo de datos, en rama `h1-data-model`, sin fusionar)
+
+H1 agrega el modelo de datos con Drizzle ORM + PostgreSQL: 14 tablas,
+migración versionada `apps/api/drizzle/0000_gifted_klaw.sql`, índices
+justificados y datos sintéticos. **Ninguna migración se aplicó en
+ninguna base de datos y no se creó ninguna base en H1.** El documento
+de decisiones es `docs/H1-MODELO-DATOS.md` y el detalle operativo está
+en `apps/api/src/db/README.md`. El merge a `main` requiere autorización
+independiente.
+
 ## Estado: Hito H0 (preparación del proyecto)
 
 Este repositorio contiene únicamente el arranque reproducible del
