@@ -278,8 +278,8 @@ afirma que las migraciones funcionen en PostgreSQL** hasta la prueba 1.
   demo/producción compartida).
 - Decisión pendiente (fuera de H1): PD-05 (`tolerance_config`) sigue
   excluida; PD-01 (correo) y PD-10/PD-12 no se tocan aquí.
-- La rama `h1-data-model` no está fusionada: el merge requiere
-  autorización independiente.
+- La integración de la rama `h1-data-model` en `main` y cualquier
+  ejecución contra PostgreSQL real requieren autorizaciones separadas.
 
 ## 10. Recomendación
 
@@ -289,3 +289,42 @@ sin base de datos, todos en verde), con las limitaciones declaradas en
 §8. No requieren correcciones antes de la revisión, pero el merge a
 `main` y cualquier ejecución contra PostgreSQL real deben esperar
 autorizaciones separadas.
+
+## 11. Puertas obligatorias de H2 (pendientes, NO verificadas)
+
+Ninguna de las comprobaciones de esta sección pasó. Son requisitos
+previos a habilitar endpoints que escriban en las tablas
+correspondientes. No se afirma que ninguna de ellas esté cumplida.
+
+Controles de aplicación obligatorios (hallazgos de la revisión
+independiente de H1):
+
+- **A-01 — Candidatos de duplicados entre organizaciones:** impedir
+  pares cross-org mediante validación de aplicación y pruebas
+  negativas (un candidato con documentos de dos organizaciones
+  distintas debe rechazarse); evaluar FK compuestas
+  (organización, documento) como endurecimiento adicional.
+- **A-02 — Exportaciones:** comprobar que todos los documentos
+  pertenezcan a la organización exportadora y estén aprobados en el
+  momento de exportar; verificar el conteo real de ítems contra
+  `exports.document_count`.
+- **M-01 — Estados y decisiones:** validar las transiciones permitidas
+  y la coherencia entre el estado actual del documento, la decisión
+  registrada y las correcciones aprobadas.
+- **M-02 — Permisos:** impedir concesiones a personas que no sean
+  miembros de la organización y validar el rol correspondiente
+  (un `org_admin` no necesita filas de permiso).
+- **M-03 — Auditoría:** garantizar que la organización del evento
+  coincida con la entidad asociada y probar el rechazo de
+  inconsistencias.
+
+Puertas de validación en PostgreSQL (pendientes, en orden):
+
+1. Aplicación de migraciones en una instancia PostgreSQL compatible.
+2. Ejecución controlada de los seeds y verificación de restricciones
+   (FK, CHECK, unicidad parcial, columna generada, idempotencia).
+3. Pruebas reales de aislamiento multi-tenant.
+4. Inspección de `EXPLAIN` para las consultas S2, S3 y S6.
+5. Pruebas de la columna generada y de las restricciones de unicidad
+   parcial bajo PostgreSQL (incluido su comportamiento bajo
+   concurrencia).
