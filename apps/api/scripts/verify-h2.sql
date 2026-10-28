@@ -123,7 +123,7 @@ BEGIN
   UPDATE documents SET total_amount = 10.005 WHERE id = v_probe RETURNING total_cents INTO v_cents;
   IF v_cents IS NOT NULL THEN RAISE EXCEPTION 'FAIL total_cents 10.005 -> % (se esperaba NULL)', v_cents; END IF;
   UPDATE documents SET total_amount = 10.1000 WHERE id = v_probe RETURNING total_cents INTO v_cents;
-  IF v_cents IS DISTINCT FROM 101000 THEN RAISE EXCEPTION 'FAIL total_cents 10.1000 -> %', v_cents; END IF;
+  IF v_cents IS DISTINCT FROM 1010 THEN RAISE EXCEPTION 'FAIL total_cents 10.1000 -> %', v_cents; END IF;
   UPDATE documents SET total_amount = -50.25 WHERE id = v_probe RETURNING total_cents INTO v_cents;
   IF v_cents IS DISTINCT FROM -5025 THEN RAISE EXCEPTION 'FAIL total_cents -50.25 -> %', v_cents; END IF;
   UPDATE documents SET total_amount = NULL WHERE id = v_probe RETURNING total_cents INTO v_cents;
@@ -157,8 +157,8 @@ BEGIN
     INSERT INTO documents (id, organization_id, file_name, file_hash, mime_type, size_bytes, status, total_amount)
       VALUES (v_probe, v_org, 'sonda.pdf', v_hash, 'application/pdf', 100, 'uploaded', 10000000000000000.00);
     RAISE EXCEPTION 'FAIL: el desborde NUMERIC no fue rechazado';
-  EXCEPTION WHEN numeric_field_overflow THEN
-    RAISE NOTICE 'PASS 4b: desborde NUMERIC(19,4) rechazado (numeric_field_overflow)';
+  EXCEPTION WHEN SQLSTATE '22003' THEN
+    RAISE NOTICE 'PASS 4b: desborde NUMERIC(19,4) rechazado (SQLSTATE 22003 numeric_value_out_of_range)';
   END;
 END $$;
 
