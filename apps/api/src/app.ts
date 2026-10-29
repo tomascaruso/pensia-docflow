@@ -36,6 +36,10 @@ import { registerInvitationRoutes } from "./routes/invitations.js";
 import { registerGrantRoutes } from "./routes/grants.js";
 import { registerMemberRoutes } from "./routes/members.js";
 import { registerDocumentRoutes } from "./routes/documents.js";
+import { registerDecisionRoutes } from "./routes/decisions.js";
+import { registerRetryRoutes } from "./routes/retry.js";
+import { registerDuplicateCandidateRoutes } from "./routes/duplicate-candidates.js";
+import { registerDocumentsFileRoutes } from "./routes/documents-file.js";
 import {
   MAX_FILE_BYTES,
   type UploadStoragePort,
@@ -111,6 +115,23 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       auth: options.auth,
       storage: options.storage,
     });
+    registerDecisionRoutes(app, {
+      db: options.db,
+      auth: options.auth,
+    });
+    registerRetryRoutes(app, {
+      db: options.db,
+      auth: options.auth,
+    });
+    registerDuplicateCandidateRoutes(app, {
+      db: options.db,
+      auth: options.auth,
+    });
+    registerDocumentsFileRoutes(app, {
+      db: options.db,
+      auth: options.auth,
+      storage: options.storage,
+    });
   }
   app.setErrorHandler((error, _request, reply) => {
     const mapped = toHttp(error);
@@ -119,6 +140,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         error: mapped.code,
         message: mapped.message,
         ...(mapped.id !== undefined ? { id: mapped.id } : {}),
+        ...(mapped.blockers !== undefined
+          ? { blockers: mapped.blockers }
+          : {}),
       });
       return;
     }

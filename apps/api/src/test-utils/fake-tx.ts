@@ -230,6 +230,7 @@ export function createFakeDb(
             "updatedAt",
             "grantedAt",
             "joinedAt",
+            "decidedAt",
           ]) {
             if (!(field in stored)) {
               stored[field] = new Date();

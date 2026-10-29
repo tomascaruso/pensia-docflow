@@ -150,7 +150,10 @@ export function createDrizzleDocumentRepository(
           correctedValue: schema.documentFields.correctedValue,
         })
         .from(schema.documentFields)
-        .where(eq(schema.documentFields.documentId, documentId));
+        // B5: el `limit` hace al adaptador compatible con el fake de
+        // tests (su `where` solo devuelve filas vía `limit`).
+        .where(eq(schema.documentFields.documentId, documentId))
+        .limit(100);
       const corrections: ApprovedCorrection[] = [];
       for (const fieldRow of fieldRows) {
         const fieldKey = asStringOrNull(fieldRow["fieldKey"]);

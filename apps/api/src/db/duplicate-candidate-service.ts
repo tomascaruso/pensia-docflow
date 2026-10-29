@@ -166,6 +166,14 @@ export interface CandidateWithOrgs {
   status: string;
   documentOrganizationId: string | null;
   candidateDocumentOrganizationId: string | null;
+  /**
+   * Agregado en B5 (opcionales para no romper fakes existentes):
+   * quién resolvió el candidato y cuándo. Los escribe
+   * `updateStatus` del adaptador; el servicio de resolución los lee
+   * con `findCandidate` para la respuesta del endpoint.
+   */
+  resolvedBy?: string | null;
+  resolvedAt?: Date | string | null;
 }
 
 export interface PendingCandidateView {
@@ -175,6 +183,13 @@ export interface PendingCandidateView {
   status: string;
   documentStatus: string | null;
   candidateDocumentStatus: string | null;
+  /**
+   * Agregados en B5 (opcionales para no romper fakes existentes):
+   * el orquestador de decisiones los usa para el body de
+   * bloqueantes (qué regla generó el candidato).
+   */
+  kind?: string | null;
+  reasonCode?: string | null;
 }
 
 export interface DuplicateCandidateDocumentPorts {
