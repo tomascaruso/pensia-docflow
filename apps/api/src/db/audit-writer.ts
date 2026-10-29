@@ -305,9 +305,9 @@ function assertJsonCompatible(value: unknown, path: string): void {
  * independencia de la clave que los porte. El CUIT/CUIL se detecta
  * como 11 dígitos (con o sin guiones, formato `XX-XXXXXXXX-X` o
  * corrido); los bordes `(?<!\d)` / `(?!\d)` evitan falsos positivos
- * dentro de corridas más largas (p. ej. UUIDs: sus grupos con guiones
- * no completan 8 dígitos corridos y su cola de 12 dígitos no admite
- * una ventana de 11 con bordes no numéricos).
+ * dentro de corridas más largas, pero NO dentro de UUIDs: un UUID
+ * v4 puede traer una ventana de 11 dígitos con bordes no numéricos
+ * (letra o guion), por eso los UUIDs están exentos abajo (isUuid).
  */
 const PROHIBITED_VALUE_PATTERNS: ReadonlyArray<RegExp> = [
   /(?<!\d)\d{2}-?\d{8}-?\d(?!\d)/,
@@ -348,6 +348,22 @@ function isSha256Hex(value: string): boolean {
 }
 
 /**
+ * UUID canónico (8-4-4-4-12 hex, case-insensitive). Un UUID v4
+ * puede contener una corrida de 11 dígitos con bordes no numéricos
+ * (~0,5% de los UUIDs: medido 1037/200000), y el regex CUIT lo
+ * rechazaría falsamente (mismo bug que el SHA-256: invitation_id,
+ * target_user_id, job_id y replaces_document_id viajan en details).
+ * Solo exime el regex CUIT; el chequeo por nombre de campo y los
+ * marcadores de valor siguen activos.
+ */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
+/**
  * Indica si algún valor de cadena, en cualquier profundidad (objetos
  * y arreglos), trae un patrón sensible prohibido. Los valores no
  * cadena (números, booleanos, null) no se escanean: un importe como
@@ -357,6 +373,7 @@ function findProhibitedValue(value: unknown): boolean {
   if (typeof value === "string") {
     if (
       !isSha256Hex(value) &&
+      !isUuid(value) &&
       PROHIBITED_VALUE_PATTERNS.some((re) => re.test(value))
     ) {
       return true;

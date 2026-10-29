@@ -501,3 +501,7 @@ validar → detectar duplicados B → transacción final →
 - **WORKER_ENABLED desactivado en tests:** los tests unitarios
   y de integración invocan `processNext`/`recoverStale`
   directamente, nunca el bucle de temporizador.
+- **D7 regex CUIT demasiado amplio:** matchea cualquier corrida
+  de 11 dígitos. Mitigado con exenciones SHA-256 y UUID. Fix
+  estructural (dígito verificador mod-11 + prefijo válido)
+  pendiente para orden posterior. Fuzzing de D7 recomendado.

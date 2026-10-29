@@ -407,6 +407,120 @@ describe("writeAuditEvent — exención SHA-256 en el scan CUIT (D7, fix Flaky B
   });
 });
 
+describe("writeAuditEvent — exención UUID en el scan CUIT (D7, fix D7-UUID)", () => {
+  // UUID real con corrida de 11 dígitos ("24610843950" en la cola):
+  // el regex CUIT viejo lo rechazaba como falso positivo y eso
+  // tumbaba la creación de invitaciones con 500 (~1 de cada 193).
+  const UUID_CON_11_DIGITOS = "413cd093-22e9-4cbc-9f9c-a24610843950";
+  const UUID_NORMAL = "550e8400-e29b-41d4-a716-446655440000";
+
+  it("acepta un invitation_id UUID aunque contenga 11 dígitos corridos", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    const record = await writeAuditEvent(
+      { resolver, store },
+      {
+        ...baseInput,
+        action: "invitation.created",
+        details: { invitation_id: UUID_CON_11_DIGITOS },
+      },
+    );
+    expect(store.inserts).toHaveLength(1);
+    expect(record.detailsJson).toEqual({
+      invitation_id: UUID_CON_11_DIGITOS,
+    });
+  });
+
+  it("acepta un invitation_id UUID normal sin 11 dígitos", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await writeAuditEvent(
+      { resolver, store },
+      {
+        ...baseInput,
+        action: "invitation.created",
+        details: { invitation_id: UUID_NORMAL },
+      },
+    );
+    expect(store.inserts).toHaveLength(1);
+  });
+
+  it("sigue rechazando un valor no-UUID con 11 dígitos", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await expect(
+      writeAuditEvent(
+        { resolver, store },
+        { ...baseInput, details: { invitation_id: "cuit 20123456789" } },
+      ),
+    ).rejects.toBeInstanceOf(AuditSensitiveDetailsError);
+    expect(store.inserts).toHaveLength(0);
+  });
+
+  it("sigue rechazando por valor un invitation_id no-UUID que matchea CUIT", async () => {
+    // La clave invitation_id no es sensible (no está en la denylist
+    // de claves): el rechazo solo puede venir del scan de valores.
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await expect(
+      writeAuditEvent(
+        { resolver, store },
+        { ...baseInput, details: { invitation_id: "20123456789" } },
+      ),
+    ).rejects.toBeInstanceOf(AuditSensitiveDetailsError);
+    expect(store.inserts).toHaveLength(0);
+  });
+
+  it("acepta un target_user_id UUID con 11 dígitos (flujo permisos)", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await writeAuditEvent(
+      { resolver, store },
+      {
+        ...baseInput,
+        action: "permission.granted",
+        details: {
+          permission_key: "approve_documents",
+          target_user_id: UUID_CON_11_DIGITOS,
+        },
+      },
+    );
+    expect(store.inserts).toHaveLength(1);
+  });
+
+  it("acepta un job_id UUID con 11 dígitos (flujo worker)", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await writeAuditEvent(
+      { resolver, store },
+      {
+        ...baseInput,
+        action: "document.processing_completed",
+        details: { job_id: UUID_CON_11_DIGITOS, provider: "stub" },
+      },
+    );
+    expect(store.inserts).toHaveLength(1);
+  });
+
+  it("acepta un replaces_document_id UUID con 11 dígitos (flujo upload)", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await writeAuditEvent(
+      { resolver, store },
+      {
+        ...baseInput,
+        action: "document.upload_replaces_rejected",
+        details: {
+          replaces_document_id: UUID_CON_11_DIGITOS,
+          file_hash:
+            "77b43559247669cb07150e0843d9a5e2628cd2246135acc0a9ef03bacade3fe9",
+        },
+      },
+    );
+    expect(store.inserts).toHaveLength(1);
+  });
+});
+
 describe("audit-writer — prueba estructural (único camino)", () => {
   it("ningún archivo de src (salvo tests) inserta en audit_events fuera de audit-writer.ts, y nadie actualiza ni borra", () => {
     const srcDir = fileURLToPath(new URL("../", import.meta.url));
