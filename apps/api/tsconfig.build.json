@@ -1,1 +1,1 @@
-{"exclude":["src/**/*.test.ts","src/**/*.test.tsx"],"extends":"./tsconfig.json"}
+{"exclude":["src/**/*.test.ts","src/**/*.test.tsx","src/test-utils/**"],"extends":"./tsconfig.json"}

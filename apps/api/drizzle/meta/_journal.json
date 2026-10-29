@@ -8,6 +8,13 @@
       "when": 1793220591702,
       "tag": "0000_gifted_klaw",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793274966649,
+      "tag": "0001_redundant_captain_universe",
+      "breakpoints": true
     }
   ]
 }

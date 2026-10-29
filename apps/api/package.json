@@ -9,12 +9,17 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "db:generate": "drizzle-kit generate",
+    "auth:generate": "npx @better-auth/cli@1.4.21 generate --config ./src/auth/instance.ts --output ./src/auth/tables.ts -y",
+  "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:verify": "tsx src/db/check-destination.ts && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f scripts/verify-h2.sql"
   },
   "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.14",
+    "@fastify/cors": "11.3.1",
+    "@fastify/rate-limit": "11.2.1",
+    "better-auth": "1.7.14",
     "drizzle-orm": "^0.45.4",
     "fastify": "^5.12.7",
     "pg": "^8.23.1"
