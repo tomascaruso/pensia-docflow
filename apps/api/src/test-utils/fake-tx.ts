@@ -191,6 +191,12 @@ export interface FakeDbClient {
       };
     };
   };
+  /**
+   * Ejecución de SQL crudo (B3: advisory lock). No se modela: es
+   * un no-op que devuelve []. El lock real se prueba en la
+   * integración contra Postgres (concurrencia real).
+   */
+  execute(query: unknown): Promise<unknown>;
 }
 
 export interface FakeDb extends FakeDbClient {
@@ -283,6 +289,7 @@ export function createFakeDb(
         },
       };
     },
+    execute: async () => [],
   };
   return {
     ...client,

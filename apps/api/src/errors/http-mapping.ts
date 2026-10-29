@@ -74,11 +74,22 @@ import {
   MemberLastAdminError,
   MemberNotFoundError,
 } from "../services/member-service.js";
+import {
+  UploadDuplicateError,
+  UploadInvalidFileError,
+  UploadStorageError,
+  UploadTooLargeError,
+  UploadTooManyPagesError,
+  UploadTransactionError,
+} from "../services/upload-service.js";
+import { StorageError } from "../services/storage-provider.js";
 
 export interface HttpErrorBody {
   status: number;
   code: string;
   message: string;
+  /** Solo para duplicados: id del documento existente. */
+  id?: string;
 }
 
 const NOT_FOUND: HttpErrorBody = {
@@ -266,6 +277,46 @@ export function toHttp(error: unknown): HttpErrorBody | null {
       code: "invalid_request",
       message: "El rol no es válido.",
     };
+  }
+  if (error instanceof UploadInvalidFileError) {
+    return {
+      status: 400,
+      code: "upload_invalid_file",
+      message: "El archivo no es un PDF, JPG o PNG válido.",
+    };
+  }
+  if (error instanceof UploadTooLargeError) {
+    return {
+      status: 413,
+      code: "upload_too_large",
+      message: "El archivo supera el límite de 10 MB.",
+    };
+  }
+  if (error instanceof UploadTooManyPagesError) {
+    return {
+      status: 422,
+      code: "upload_too_many_pages",
+      message: "El PDF supera el límite de 20 páginas.",
+    };
+  }
+  if (error instanceof UploadDuplicateError) {
+    return {
+      status: 409,
+      code: "upload_duplicate",
+      message: "Ya existe un documento idéntico.",
+      id: error.documentId,
+    };
+  }
+  if (
+    error instanceof UploadStorageError ||
+    error instanceof UploadTransactionError ||
+    error instanceof StorageError
+  ) {
+    // Fallo del servidor, sin filtrar detalles internos (D7). Los
+    // códigos estables UPLOAD_STORAGE_ERROR / UPLOAD_TRANSACTION_
+    // ERROR quedan en la clase del error (logs/tests), no en el
+    // cuerpo HTTP, que es el 500 genérico.
+    return INTERNAL;
   }
   return null;
 }

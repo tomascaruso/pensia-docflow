@@ -24,6 +24,7 @@
  */
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { AuthHandlerPort } from "./auth/handler.js";
@@ -34,6 +35,11 @@ import { registerOrganizationRoutes } from "./routes/organizations.js";
 import { registerInvitationRoutes } from "./routes/invitations.js";
 import { registerGrantRoutes } from "./routes/grants.js";
 import { registerMemberRoutes } from "./routes/members.js";
+import { registerDocumentRoutes } from "./routes/documents.js";
+import {
+  MAX_FILE_BYTES,
+  type UploadStoragePort,
+} from "./services/upload-service.js";
 import { toHttp } from "./errors/http-mapping.js";
 
 export interface BuildAppOptions {
@@ -41,6 +47,7 @@ export interface BuildAppOptions {
   auth?: AuthHandlerPort & AuthSessionPort;
   platformAdminEmails?: string[];
   trustedOrigins?: string[];
+  storage?: UploadStoragePort;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -54,6 +61,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.register(rateLimit, {
     max: 300,
     timeWindow: "1 minute",
+  });
+  // Antes de las rutas: `req.file()` lo provee este plugin. Los
+  // límites globales coinciden con los de la ruta de documentos
+  // (10 MB, 1 archivo); la ruta los vuelve a declarar por llamada.
+  app.register(multipart, {
+    limits: { fileSize: MAX_FILE_BYTES, files: 1 },
   });
   registerHealthRoute(app);
   if (options.auth) {
@@ -93,6 +106,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       db: options.db,
       auth: options.auth,
     });
+    registerDocumentRoutes(app, {
+      db: options.db,
+      auth: options.auth,
+      storage: options.storage,
+    });
   }
   app.setErrorHandler((error, _request, reply) => {
     const mapped = toHttp(error);
@@ -100,6 +118,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       reply.code(mapped.status).send({
         error: mapped.code,
         message: mapped.message,
+        ...(mapped.id !== undefined ? { id: mapped.id } : {}),
       });
       return;
     }

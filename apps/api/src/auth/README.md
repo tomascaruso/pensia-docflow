@@ -354,3 +354,77 @@ migración ni cambia el esquema: todas las tablas ya existían.
 - **§5.1 a nivel HTTP tras B2:** casos 4 y 5 cerrados (grants);
   8 y 9 ya estaban en B1. Quedan 1, 2, 3 y 6 para B5 y 7
   para B6.
+
+## B3 — Carga de documentos
+
+### Endpoint nuevo
+
+- **POST /organizations/:id/documents**: multipart/form-data, un
+  solo archivo en el campo `file`. Cadena: sesión 401 →
+  membresía 404 genérico → validación del archivo en el servicio.
+  Cualquier miembro puede subir (no hay permiso M-02 de subida).
+  Respuesta 201: `{ id, status: "queued", fileName, sizeBytes,
+  createdAt }`.
+
+### Validaciones (en este orden exacto)
+
+1. Magic bytes del primer chunk → 400 `upload_invalid_file`
+   (PDF `%PDF`, JPG `FF D8 FF`, PNG 8 bytes; el mimeType guardado
+   deriva de la firma, nunca del Content-Type ni la extensión).
+2. Tamaño acumulado > 10 MB → 413 `upload_too_large` (el plugin
+   multipart también trunca a 10 MB; la ruta verifica el flag
+   `truncated` y el servicio vuelve a contar).
+3. Páginas (solo PDF) > 20 → 422 `upload_too_many_pages`;
+   PDF inválido/corrupto/cifrado → 400 (pdf-lib `load` lanza).
+   JPG/PNG → pageCount 1.
+4. Hash SHA-256 (calculado en el mismo streaming).
+5. Detección A: mismo (org, hash) con status != `rejected` →
+   409 `upload_duplicate` con `{ id }` del existente, sin storage,
+   sin documento, sin job, con auditoría
+   `document.upload_duplicate_blocked` (fuera de transacción;
+   un fallo de esa auditoría no enmascara la denegación, D8).
+   Si el único existente está `rejected` → se crea el documento
+   y se audita `document.upload_replaces_rejected` en la tx.
+
+### Storage y transacción
+
+- Interfaz `StorageProvider` (`put`, `getSignedUrl`); local en
+  `DOCFLOW_STORAGE_PATH` (default `~/.docflow/storage`, 700),
+  clave derivada `${organizationId}/${documentId}` (H1 no define
+  columna de clave). `getSignedUrl` local devuelve un token opaco
+  `${expiresAtMillis}.${hmacHex}` (HMAC-SHA256 con
+  `DOCFLOW_DOWNLOAD_TOKEN_SECRET`); la ruta de descarga lo
+  validará en B5.
+- Orden: temporal → validaciones → storage → transacción
+  (advisory lock `pg_advisory_xact_lock` por (org, hash) →
+  re-verificación de duplicado → documento en `uploaded` →
+  transición M-01 a `queued` → job `extraction`/`pending` con
+  `scheduledAt` = ahora e `idempotencyKey` = NULL (decisión
+  Q-B3-1; B4 lo fija) → auditoría `document.uploaded` con
+  `{ file_hash }`). Si la transacción falla → rollback +
+  borrado best-effort del archivo (`deleteOrphan`, interno, no
+  parte de la interfaz pública).
+- Sin migración: H1 ya cubre todas las columnas (fileHash
+  char(64), índice (org, fileHash), processingJobs con
+  idempotencyKey anulable).
+
+### Deudas de B3
+
+- **Ruta de descarga GET /documents/:id/file:** diferida a B5
+  (decisión Q-B3-2). B3 entrega `getSignedUrl` + verificación de
+  token, no la ruta.
+- **Rate-limit específico de upload:** diferido (decisión
+  Q-B3-3). Solo el global 300/min.
+- **Cuota de storage por organización:** diferida (sin datos
+  para calibrar).
+- **Limpieza de huérfanos ante muerte del proceso:** si el
+  proceso muere entre el storage write y la transacción, queda
+  un archivo sin documento. El fallo controlado se limpia con
+  `deleteOrphan`; el caso de muerte del proceso requiere un job
+  de limpieza posterior (fuera de B3).
+- **pdf-lib en memoria:** el conteo de páginas carga el PDF
+  completo; válido hasta el tope de 10 MB. Si el tope sube,
+  hará falta conteo por streaming.
+- **Servidor HTTP real no verificado:** como en B1, los tests
+  usan Fastify inject; la verificación con servidor real queda
+  para la fase de QA/deploy.
