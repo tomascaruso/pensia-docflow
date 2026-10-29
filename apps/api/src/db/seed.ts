@@ -1,35 +1,68 @@
 /**
- * DocFlow H1 — Cargador de datos sintéticos (PREPARADO, NO EJECUTADO).
+ * DocFlow H1/H2 — Cargador de datos sintéticos.
  *
- * NO se ejecutó en H1 y NO debe ejecutarse sin una instancia PostgreSQL
- * autorizada y una DATABASE_URL válida. Requiere la variable de entorno
- * DATABASE_URL y sale con error claro si falta; nunca usa credenciales
- * por defecto ni crea bases de datos (solo inserta en una existente).
+ * NO debe ejecutarse sin una instancia PostgreSQL autorizada y una
+ * DATABASE_URL válida. Requiere la variable de entorno DATABASE_URL y
+ * sale con error claro si falta; nunca usa credenciales por defecto ni
+ * crea bases de datos (solo inserta en una existente).
  *
- * Uso futuro (tras autorización y con la instancia lista):
- *   DATABASE_URL=postgresql://... npm run db:seed --workspace=@pensia-docflow/api
+ * Protección de destino (H2): antes de conectar, la guarda rechaza
+ * cualquier DATABASE_URL que no apunte a la base local autorizada
+ * (`docflow_dev` por destino local); tras conectar, se verifica
+ * `current_database()` Y la localidad del servidor
+ * (`inet_server_addr()` loopback, o NULL solo para socket Unix) y se
+ * aborta sin escribir si no se demuestra destino local.
+ *
+ * Uso (tras autorización y con la instancia lista):
+ *   DATABASE_URL=postgresql://usuario@127.0.0.1:5432/docflow_dev npm run db:seed
  *
  * Las inserciones usan onConflictDoNothing sobre las claves primarias
- * para que una segunda carga no duplique los fixtures. Los documentos
- * NO incluyen `total_cents`: es una columna generada por la base.
+ * para que una segunda carga no duplique los fixtures. Es una estrategia
+ * de inserción SIN actualización: una segunda carga no actualiza
+ * fixtures modificados. Los documentos NO incluyen `total_cents`: es una
+ * columna generada por la base.
  */
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { sql } from "drizzle-orm";
 import * as schema from "./schema.js";
 import { syntheticSeed } from "./seeds/synthetic.js";
+import {
+  assertNoConflictingEnv,
+  assertSeedTarget,
+} from "./seed-guard.js";
+import { verifyLocalConnection } from "./verify-connection.js";
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     console.error(
       "seed: falta DATABASE_URL. No se cargó nada. " +
-        "Definí DATABASE_URL apuntando a una instancia autorizada y volvé a intentar.",
+        "Definí DATABASE_URL apuntando a una instancia local autorizada y volvé a intentar.",
+    );
+    process.exit(2);
+  }
+  try {
+    assertSeedTarget(connectionString);
+    assertNoConflictingEnv();
+  } catch (error) {
+    console.error(
+      `seed: destino no autorizado, no se cargó nada. ${(error as Error).message}`,
     );
     process.exit(2);
   }
   const pool = new Pool({ connectionString });
   const db = drizzle(pool, { schema });
   try {
+    await verifyLocalConnection(async () => {
+      const { rows } = await db.execute(
+        sql`SELECT current_database() AS database, inet_server_addr() AS server_addr`,
+      );
+      const row = rows[0] as
+        | { database?: unknown; server_addr?: unknown }
+        | undefined;
+      return { database: row?.database, serverAddr: row?.server_addr };
+    }, connectionString);
     await db.transaction(async (tx) => {
       await tx.insert(schema.organizations).values(syntheticSeed.organizations).onConflictDoNothing();
       await tx.insert(schema.organizationMembers).values(syntheticSeed.organizationMembers).onConflictDoNothing();

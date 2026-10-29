@@ -248,55 +248,78 @@ está desacoplada del proveedor y cambiarlo no reescribe el producto.
 Tablas principales (detalle de columnas en el informe final y en la
 implementación):
 
-- `organizations` (id — mismo id que la organización de Better Auth —,
-  nombre, created_at)
-- `users` (id — mismo id que el usuario de Better Auth —, email único;
-  sin columna de contraseña en DocFlow: la contraseña la gestiona
-  Better Auth)
-- `organization_members` (organization_id, user_id, role
-  `org_admin|reviewer`, UNIQUE organization_id + user_id) — el rol
-  es el rol de DocFlow, no el rol del plugin de Better Auth.
+Nota H2-validación: la lista siguiente es el esquema construido en H1
+(`apps/api/src/db/schema.ts` y migración
+`apps/api/drizzle/0000_gifted_klaw.sql`) y reemplaza los nombres y
+columnas del boceto original de Misión 1, que quedaron superados. En
+particular: no existen en DocFlow las columnas `due_date`,
+`subtotal`, `tax_amount`, `file_key`, `uploaded_by`, `provider` ni
+`organization_id` en trabajos, ni las tablas `users`,
+`field_corrections`, `validation_results`, `approvals` o `line_items`
+con esos nombres. Las correcciones viven como columnas en
+`document_fields` (nunca borrando la extracción original); la identidad
+de usuarios la aporta Better Auth en H2 (en DocFlow, `user_id` es texto
+sin tabla propia); todas las FK son RESTRICT.
+
+- `organizations` (id, name, created_at, updated_at; CHECK de nombre
+  no vacío)
+- `organization_members` (id, organization_id, user_id, role
+  `org_admin|reviewer`, joined_at; UNIQUE organization_id + user_id) —
+  el rol es el rol de DocFlow, no el rol del plugin de Better Auth.
 - `member_permissions` (id, organization_id, user_id, permission_key
   `approve_documents|export_documents`, granted_by, granted_at,
   revoked_by, revoked_at) — un otorgamiento está vigente solo si
-  `revoked_at` es nulo; nunca se borra físicamente. No existe un
-  campo `can_approve` en el miembro: el permiso efectivo es
-  `role = org_admin` O `existe otorgamiento vigente`.
-- `documents` (id, organization_id, supplier_name, tax_id, invoice_number,
-  issue_date, due_date, currency, subtotal, tax_amount, total, status,
-  file_key, file_hash_sha256, business_key, mime_type, page_count,
-  uploaded_by, created_at, updated_at) — `business_key` es la clave
+  `revoked_at` es nulo; nunca se borra físicamente; unicidad parcial
+  sobre otorgamientos activos. No existe un campo `can_approve` en el
+  miembro: el permiso efectivo es `role = org_admin` O `existe
+  otorgamiento vigente`.
+- `documents` (id, organization_id, file_name, file_hash char(64),
+  mime_type, size_bytes, page_count, status `uploaded|queued|
+  processing|needs_review|approved|rejected|failed|blocked`,
+  supplier_name, supplier_tax_id, invoice_number, issue_date, currency
+  char(3), total_amount NUMERIC(19,4), total_cents generado,
+  business_key, created_at, updated_at) — `business_key` es la clave
   de identidad de negocio de `PRODUCT_SPEC.md` 7.2, nula cuando está
-  incompleta (falta identificador fiscal, número, total o fecha);
-  `file_hash_sha256` solo identifica el archivo, nunca es requisito
-  de la clave de negocio.
-- `document_fields` (id, document_id, key, raw_value, normalized_value,
-  confidence, source_provider, source_model, page, origin, is_current)
-- `line_items` (id, document_id, description, quantity, unit_price,
-  amount, position, origin)
-- `processing_jobs` (id, document_id, organization_id, provider, status,
-  attempt_count, idempotency_key UNIQUE, error_code, error_message
-  (sin contenido del documento), started_at, finished_at)
-- `validation_results` (id, document_id, rule_id, severity, field,
-  message, details_json, created_at)
-- `document_reviews` / correcciones: cada corrección es una fila nueva
-  en `field_corrections` (document_id, field_key, old_value, new_value,
-  corrected_by, reason, created_at); el valor vigente se resuelve por
-  última corrección, nunca borrando la extracción original.
-- `approvals` (id, document_id, decision `approved|rejected`, decided_by,
-  comment, created_at)
+  incompleta; `file_hash` solo identifica el archivo, nunca es
+  requisito de la clave de negocio.
+- `document_fields` (id, document_id, field_key, extracted_value,
+  normalized_value, confidence NUMERIC(5,4), source, is_missing,
+  is_uncertain, page_number, corrected_value, corrected_by,
+  corrected_at, approved_value; UNIQUE document_id + field_key)
+- `extraction_lines` (id, document_id, line_number, description,
+  quantity, unit_price, line_total NUMERIC(19,4); UNIQUE document_id +
+  line_number)
+- `processing_jobs` (id, document_id, job_type `extraction`, status,
+  attempts, max_attempts, idempotency_key UNIQUE, last_error,
+  scheduled_at, started_at, completed_at, created_at, updated_at) — sin
+  `organization_id` (la organización se deriva del documento) y sin
+  `provider` (el proveedor queda codificado en la clave de idempotencia
+  `organization_id + document_id + file_hash + provider`).
+- `document_validations` (id, document_id, rule_code, severity
+  `error|warning|info`, message, field_key, status
+  `active|exception_accepted`, exception_justification,
+  exception_accepted_by, exception_accepted_at, created_at, updated_at)
+- `document_reviews` (id, document_id, reviewer_id, notes, started_at,
+  submitted_at)
+- `document_decisions` (id, document_id, decided_by, decision
+  `approved|rejected`, justification, decided_at; UNIQUE por documento)
 - `duplicate_candidates` (id, document_id, candidate_document_id,
   kind `business_exact|business_probable`, reason_code
   (`BUSINESS_EXACT` o `P1`–`P6` según `PRODUCT_SPEC.md` 7.3),
   matched_fields_json, status `pending|distinct|duplicate|overridden`,
-  resolved_by, resolved_at, justification, created_at) — la detección
-  de archivo idéntico por hash NO crea una fila aquí: es una barrera
-  previa a la carga y se registra solo en `audit_events`.
-- `exports` (id, organization_id, created_by, format `csv`, status,
-  document_count, file_key, created_at)
-- `export_items` (export_id, document_id, UNIQUE export_id + document_id)
-- `audit_events` (id, organization_id, actor_id, entity_type, entity_id,
-  action, before_json, after_json, created_at) — solo inserción.
+  resolved_by, resolved_at, justification, created_at, updated_at;
+  UNIQUE direccional del par) — la detección de archivo idéntico por
+  hash NO crea una fila aquí: es una barrera previa a la carga y se
+  registra solo en `audit_events`. Sin columna de organización: el
+  aislamiento cross-org es hoy de aplicación (ver H1 §11, A-01).
+- `exports` (id, organization_id, requested_by, status
+  `pending|completed|failed`, main_file_name, lines_file_name,
+  document_count, completed_at, created_at, updated_at)
+- `export_items` (id, export_id, document_id; UNIQUE export_id +
+  document_id)
+- `audit_events` (id, organization_id, actor_id, action, entity_type,
+  entity_id, details_json, created_at) — solo inserción por convención;
+  sin contenido documental sensible en `details_json`.
 
 Dinero: `NUMERIC(19,4)` en PostgreSQL, nunca float. Fechas: `DATE`.
 Identificadores: UUID v4. Índices: `(organization_id, status)`,

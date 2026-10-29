@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts",
+    "db:verify": "tsx src/db/check-destination.ts && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f scripts/verify-h2.sql"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
