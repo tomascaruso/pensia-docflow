@@ -1,0 +1,271 @@
+/**
+ * DocFlow B1/B2 — Mapeo de errores de dominio (D9) a HTTP.
+ *
+ * Los servicios H3 lanzan errores tipados sin saber de HTTP; esta
+ * es la única capa que los traduce a status/código/mensaje. Los
+ * mensajes son genéricos y en español, sin contenido de documentos
+ * ni detalles internos (D7).
+ *
+ * Reglas de mapeo:
+ * - 404 genérico para "no existe" y para cross-org (no filtra si
+ *   el recurso existe o es de otra org).
+ * - 403 para falta de permiso, con intento auditado en la capa que
+ *   lo detecta (no acá).
+ * - 409 para conflictos de estado o de unicidad.
+ * - 422 para errores de validación de negocio (transiciones,
+ *   coherencia de decisión, documento no aprobado).
+ * - 400 para entrada inválida.
+ * - Errores del escritor M-03 → 500: son fallos del servidor, no
+ *   del cliente (la auditoría fallida dentro de una transacción
+ *   hace rollback de todo, D8).
+ * - `DuplicateCandidateQuarantinedError` → 409 como fallback. La
+ *   ruta de resolución (B5) lo captura ANTES de este mapeo para
+ *   devolver la respuesta específica de cuarentena (y para no
+ *   abortar la transacción que registra la auditoría de
+ *   cuarentena); si llegara acá, 409 es la respuesta segura.
+ * - Error desconocido → `null`: el error handler de `app.ts`
+ *   responde 500 genérico (o preserva el statusCode de errores
+ *   Fastify 4xx).
+ */
+import { AuditWriterError } from "../db/audit-writer.js";
+import {
+  DecisionAttemptsExceededError,
+  DecisionIncoherentError,
+  StateTransitionForbiddenError,
+} from "../db/state-machine.js";
+import {
+  DecisionDocumentNotFoundError,
+  DecisionForbiddenError,
+} from "../db/decision-service.js";
+import {
+  DuplicateCandidateAlreadyResolvedError,
+  DuplicateCandidateCrossOrgError,
+  DuplicateCandidateDocumentNotFoundError,
+  DuplicateCandidateForbiddenError,
+  DuplicateCandidateInvalidTypeError,
+  DuplicateCandidateNotFoundError,
+  DuplicateCandidateQuarantinedError,
+} from "../db/duplicate-candidate-service.js";
+import {
+  ExportDocumentCrossOrgError,
+  ExportDocumentNotApprovedError,
+  ExportDocumentNotFoundError,
+  ExportEmptyError,
+  ExportForbiddenError,
+  ExportInvalidError,
+} from "../db/export-service.js";
+import {
+  PermissionConflictError,
+  PermissionForbiddenError,
+  PermissionMembershipError,
+  PermissionNotFoundError,
+} from "../db/permission-service.js";
+import {
+  InvitationAlreadyAcceptedError,
+  InvitationConflictError,
+  InvitationEmailMismatchError,
+  InvitationExpiredError,
+  InvitationInvalidEmailError,
+  InvitationNotFoundError,
+  InvitationRejectedError,
+} from "../services/invitation-service.js";
+import {
+  MemberInvalidRoleError,
+  MemberLastAdminError,
+  MemberNotFoundError,
+} from "../services/member-service.js";
+
+export interface HttpErrorBody {
+  status: number;
+  code: string;
+  message: string;
+}
+
+const NOT_FOUND: HttpErrorBody = {
+  status: 404,
+  code: "not_found",
+  message: "Recurso no encontrado.",
+};
+
+const FORBIDDEN: HttpErrorBody = {
+  status: 403,
+  code: "forbidden",
+  message: "No tenés permiso para esta acción.",
+};
+
+const INTERNAL: HttpErrorBody = {
+  status: 500,
+  code: "internal_error",
+  message: "Error interno del servidor.",
+};
+
+export function toHttp(error: unknown): HttpErrorBody | null {
+  if (error instanceof PermissionMembershipError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof PermissionForbiddenError) {
+    return FORBIDDEN;
+  }
+  if (error instanceof PermissionNotFoundError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof PermissionConflictError) {
+    return {
+      status: 409,
+      code: "conflict",
+      message: "La acción entra en conflicto con el estado actual.",
+    };
+  }
+  if (error instanceof StateTransitionForbiddenError) {
+    return {
+      status: 422,
+      code: "invalid_transition",
+      message: "La transición de estado no está permitida.",
+    };
+  }
+  if (error instanceof DecisionAttemptsExceededError) {
+    return {
+      status: 422,
+      code: "max_attempts_exceeded",
+      message: "El documento superó el máximo de intentos.",
+    };
+  }
+  if (error instanceof DecisionIncoherentError) {
+    return {
+      status: 422,
+      code: "decision_incoherent",
+      message: "La decisión no coincide con las correcciones.",
+    };
+  }
+  if (error instanceof DecisionForbiddenError) {
+    return FORBIDDEN;
+  }
+  if (error instanceof DecisionDocumentNotFoundError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof DuplicateCandidateCrossOrgError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof DuplicateCandidateDocumentNotFoundError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof DuplicateCandidateInvalidTypeError) {
+    return {
+      status: 400,
+      code: "invalid_request",
+      message: "La solicitud no es válida.",
+    };
+  }
+  if (error instanceof DuplicateCandidateQuarantinedError) {
+    return {
+      status: 409,
+      code: "duplicate_candidate_quarantined",
+      message: "El candidato pertenece a otra organización.",
+    };
+  }
+  if (error instanceof DuplicateCandidateAlreadyResolvedError) {
+    return {
+      status: 409,
+      code: "conflict",
+      message: "La acción entra en conflicto con el estado actual.",
+    };
+  }
+  if (error instanceof DuplicateCandidateForbiddenError) {
+    return FORBIDDEN;
+  }
+  if (error instanceof DuplicateCandidateNotFoundError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof ExportForbiddenError) {
+    return FORBIDDEN;
+  }
+  if (error instanceof ExportDocumentCrossOrgError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof ExportDocumentNotFoundError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof ExportDocumentNotApprovedError) {
+    return {
+      status: 422,
+      code: "document_not_approved",
+      message: "El documento no está aprobado.",
+    };
+  }
+  if (error instanceof ExportEmptyError) {
+    return {
+      status: 400,
+      code: "invalid_request",
+      message: "La exportación no puede estar vacía.",
+    };
+  }
+  if (error instanceof ExportInvalidError) {
+    return {
+      status: 400,
+      code: "invalid_request",
+      message: "La solicitud no es válida.",
+    };
+  }
+  if (error instanceof AuditWriterError) {
+    return INTERNAL;
+  }
+  if (error instanceof InvitationNotFoundError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof InvitationEmailMismatchError) {
+    return FORBIDDEN;
+  }
+  if (error instanceof InvitationExpiredError) {
+    return {
+      status: 410,
+      code: "invitation_expired",
+      message: "La invitación expiró.",
+    };
+  }
+  if (error instanceof InvitationAlreadyAcceptedError) {
+    return {
+      status: 409,
+      code: "invitation_already_accepted",
+      message: "La invitación ya fue aceptada.",
+    };
+  }
+  if (error instanceof InvitationRejectedError) {
+    return {
+      status: 409,
+      code: "invitation_rejected",
+      message: "La invitación fue rechazada.",
+    };
+  }
+  if (error instanceof InvitationConflictError) {
+    return {
+      status: 409,
+      code: "invitation_conflict",
+      message: "La invitación entra en conflicto con el estado actual.",
+    };
+  }
+  if (error instanceof InvitationInvalidEmailError) {
+    return {
+      status: 400,
+      code: "invalid_request",
+      message: "El correo no es válido.",
+    };
+  }
+  if (error instanceof MemberNotFoundError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof MemberLastAdminError) {
+    return {
+      status: 409,
+      code: "last_admin",
+      message: "No se puede degradar al último administrador.",
+    };
+  }
+  if (error instanceof MemberInvalidRoleError) {
+    return {
+      status: 400,
+      code: "invalid_request",
+      message: "El rol no es válido.",
+    };
+  }
+  return null;
+}
