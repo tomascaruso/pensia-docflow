@@ -301,17 +301,53 @@ function assertJsonCompatible(value: unknown, path: string): void {
 }
 
 /**
- * Patrones sensibles detectables en valores de cadena (D7), con
- * independencia de la clave que los porte. El CUIT/CUIL se detecta
- * como 11 dígitos (con o sin guiones, formato `XX-XXXXXXXX-X` o
- * corrido); los bordes `(?<!\d)` / `(?!\d)` evitan falsos positivos
- * dentro de corridas más largas, pero NO dentro de UUIDs: un UUID
- * v4 puede traer una ventana de 11 dígitos con bordes no numéricos
- * (letra o guion), por eso los UUIDs están exentos abajo (isUuid).
+ * Validación estructural de CUIT (D7, fix estructural): un valor
+ * solo se rechaza como CUIT si ES un CUIT estructuralmente válido.
+ * El regex viejo (`\d{2}-?\d{8}-?\d` con bordes) matcheaba
+ * cualquier corrida de 11 dígitos y produjo dos bugs de producción
+ * (falsos positivos en hashes SHA-256 y en UUIDs v4). Un CUIT real
+ * tiene 11 dígitos (con o sin guiones, `XX-XXXXXXXX-X` o corrido),
+ * prefijo en [20, 23, 24, 27, 30, 33, 34] y dígito verificador
+ * módulo 11 (pesos [5,4,3,2,7,6,5,4,3,2] sobre los primeros 10
+ * dígitos; 11 - resto, con 11 → 0 y 10 → inválido). Un número de
+ * 11 dígitos con prefijo inválido o dígito verificador inválido
+ * NO es un CUIT real y no se rechaza por D7 (la validación de CUIT
+ * como dato de negocio corresponde a las validaciones
+ * deterministas, no al escritor de auditoría).
  */
-const PROHIBITED_VALUE_PATTERNS: ReadonlyArray<RegExp> = [
-  /(?<!\d)\d{2}-?\d{8}-?\d(?!\d)/,
-];
+const CUIT_VALID_PREFIXES = new Set([
+  "20",
+  "23",
+  "24",
+  "27",
+  "30",
+  "33",
+  "34",
+]);
+
+const CUIT_CHECK_WEIGHTS = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+
+export function isValidCuit(value: string): boolean {
+  const digits = value.replace(/-/g, "");
+  if (!/^\d{11}$/.test(digits)) {
+    return false;
+  }
+  if (!CUIT_VALID_PREFIXES.has(digits.slice(0, 2))) {
+    return false;
+  }
+  let sum = 0;
+  for (const [index, weight] of CUIT_CHECK_WEIGHTS.entries()) {
+    sum += Number(digits.charAt(index)) * weight;
+  }
+  const remainder = sum % 11;
+  if (remainder === 0) {
+    return digits.charAt(10) === "0";
+  }
+  if (remainder === 1) {
+    return false;
+  }
+  return digits.charAt(10) === String(11 - remainder);
+}
 
 /**
  * Marcadores normalizados (minúsculas, sin `_`, `-` ni espacios)
@@ -335,11 +371,15 @@ const PROHIBITED_VALUE_MARKERS: ReadonlyArray<string> = [
 
 /**
  * Exención D7 (fix Flaky B): un SHA-256 en hex (64 caracteres
- * [0-9a-f], el formato que emite `file_hash`) no se escanea con el
- * regex CUIT: una corrida de 11 dígitos dentro de un hash es un
- * falso positivo, no un CUIT. Solo exime el regex CUIT; el chequeo
- * por nombre de campo y los marcadores de valor siguen activos, y
- * un CUIT real (11 dígitos fuera de un hash) sigue rechazándose.
+ * [0-9a-f], el formato que emite `file_hash`) no se somete a la
+ * validación CUIT: una corrida de 11 dígitos dentro de un hash es
+ * un falso positivo, no un CUIT. Defensa en profundidad: tras el
+ * fix estructural esta exención ya no es estrictamente necesaria
+ * (64 caracteres no pueden pasar `isValidCuit`), pero se mantiene:
+ * evita el cómputo y protege ante cambios futuros del validador.
+ * Solo exime la validación CUIT; el chequeo por nombre de campo y
+ * los marcadores de valor siguen activos, y un CUIT real
+ * estructuralmente válido sigue rechazándose.
  */
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
 
@@ -350,10 +390,14 @@ function isSha256Hex(value: string): boolean {
 /**
  * UUID canónico (8-4-4-4-12 hex, case-insensitive). Un UUID v4
  * puede contener una corrida de 11 dígitos con bordes no numéricos
- * (~0,5% de los UUIDs: medido 1037/200000), y el regex CUIT lo
- * rechazaría falsamente (mismo bug que el SHA-256: invitation_id,
- * target_user_id, job_id y replaces_document_id viajan en details).
- * Solo exime el regex CUIT; el chequeo por nombre de campo y los
+ * (~0,5% de los UUIDs: medido 1037/200000), y el regex CUIT viejo
+ * lo rechazaba falsamente (mismo bug que el SHA-256:
+ * invitation_id, target_user_id, job_id y replaces_document_id
+ * viajan en details). Defensa en profundidad: tras el fix
+ * estructural esta exención ya no es estrictamente necesaria (un
+ * UUID con letras y guiones no puede pasar `isValidCuit`), pero se
+ * mantiene por la misma razón que la de SHA-256. Solo exime la
+ * validación CUIT; el chequeo por nombre de campo y los
  * marcadores de valor siguen activos.
  */
 const UUID_PATTERN =
@@ -371,11 +415,7 @@ function isUuid(value: string): boolean {
  */
 function findProhibitedValue(value: unknown): boolean {
   if (typeof value === "string") {
-    if (
-      !isSha256Hex(value) &&
-      !isUuid(value) &&
-      PROHIBITED_VALUE_PATTERNS.some((re) => re.test(value))
-    ) {
+    if (!isSha256Hex(value) && !isUuid(value) && isValidCuit(value)) {
       return true;
     }
     const normalized = value.toLowerCase().replace(/[_\- ]/g, "");
