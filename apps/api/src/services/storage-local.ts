@@ -27,7 +27,7 @@
  * tests que nunca suben) no crea directorios inesperados.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { chmod, mkdir, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -105,6 +105,15 @@ export function createLocalStorage(
     return `${expiresAt}.${hmac}`;
   }
 
+  async function get(input: { key: string }): Promise<Uint8Array> {
+    assertValidKey(input.key);
+    try {
+      return await readFile(join(basePath, input.key));
+    } catch {
+      throw new StorageReadError("No se pudo leer el archivo.");
+    }
+  }
+
   async function getSignedUrl(input: {
     key: string;
     expiresInSeconds: number;
@@ -152,5 +161,5 @@ export function createLocalStorage(
     }
   }
 
-  return { put, getSignedUrl, deleteOrphan, verifySignedToken };
+  return { put, get, getSignedUrl, deleteOrphan, verifySignedToken };
 }

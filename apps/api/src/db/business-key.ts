@@ -12,9 +12,10 @@
  * - Identificador fiscal: solo dígitos.
  * - Número de comprobante: mayúsculas, sin espacios ni separadores
  *   ` -/.`, conservando letras y ceros.
- * - Total: exacto en centavos. Si el importe tiene más de 2 decimales,
- *   la conversión no es exacta y el componente es NULL (clave incompleta
- *   -> evaluación de probables, nunca exacto).
+ * - Total: exacto en centavos. Un importe con decimales 3º/4º no
+ *   nulos no es exacto y el componente es NULL (clave incompleta
+ *   -> evaluación de probables, nunca exacto); los ceros de
+ *   relleno de NUMERIC(19,4) ("121000.0000") sí son exactos.
  * - Moneda: código ISO en mayúsculas. Fecha: ISO YYYY-MM-DD.
  * - Clave: proveedor|fiscal|número|total en centavos|moneda|fecha.
  *   NULL si falta cualquier componente (o es vacío tras normalizar).
@@ -79,19 +80,27 @@ export function normalizeIssueDate(
 
 /**
  * Convierte un importe decimal exacto a centavos (BigInt en cadena para
- * no perder precisión). Devuelve NULL si el importe tiene más de 2
- * decimales o no es un decimal válido. Espejo de la columna generada
- * `documents.total_cents` (TRUNC a 2 decimales + comparación de igualdad).
+ * no perder precisión). Devuelve NULL si el importe no es exacto en
+ * centavos o no es un decimal válido. Acepta hasta 4 decimales
+ * siempre que el 3º y 4º sean cero: la columna es NUMERIC(19,4) y
+ * Postgres devuelve "121000.0000" para un total exacto, que DEBE
+ * convertir a "12100000" (si no, la Detección B vería ausente el
+ * total de todo documento ya guardado). Espejo de la columna
+ * generada `documents.total_cents` (TRUNC a 2 decimales +
+ * comparación de igualdad).
  */
 export function totalCentsFromAmount(
   amount: string | null | undefined,
 ): string | null {
   if (amount === null || amount === undefined) return null;
-  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(amount.trim());
+  const match = /^(-?)(\d+)(?:\.(\d{1,4}))?$/.exec(amount.trim());
   if (!match) return null;
+  const frac4 = (match[3] ?? "").padEnd(4, "0");
+  // Exacto en centavos solo si los decimales 3º y 4º son cero.
+  if (frac4[2] !== "0" || frac4[3] !== "0") return null;
   const sign = match[1] === "-" ? -1n : 1n;
   const whole = BigInt(match[2]);
-  const frac = (match[3] ?? "").padEnd(2, "0");
+  const frac = frac4.slice(0, 2);
   const cents = whole * 100n + BigInt(frac);
   return (sign * cents).toString();
 }

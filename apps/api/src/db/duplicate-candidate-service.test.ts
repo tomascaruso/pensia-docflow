@@ -271,6 +271,23 @@ describe("createCandidate — éxito", () => {
     });
   });
 
+  it("actorUserId null (sistema, B4) → auditoría con actorId null", async () => {
+    const { deps, state } = makeDeps();
+    const result = await createCandidate(deps, {
+      documentId: DOC_A1,
+      candidateDocumentId: DOC_A2,
+      kind: "business_exact",
+      reasonCode: "BUSINESS_EXACT",
+      actorUserId: null,
+    });
+    expect(result.status).toBe("pending");
+    expect(state.audits).toHaveLength(1);
+    expect(state.audits[0]).toMatchObject({
+      actorId: null,
+      action: "duplicate_candidate.created",
+    });
+  });
+
   it("fallo inyectado en la auditoría revierte la fila", async () => {
     const { deps, state } = makeDeps({ auditShouldThrow: true });
     await expect(

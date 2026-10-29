@@ -31,6 +31,16 @@ describe("normalización de la clave de negocio (Misión 1)", () => {
     expect(totalCentsFromAmount(null)).toBeNull();
   });
 
+  it("total: relleno NUMERIC(19,4) con ceros es exacto; 3º/4º no nulos -> null", () => {
+    expect(totalCentsFromAmount("121000.0000")).toBe("12100000");
+    expect(totalCentsFromAmount("121000.0100")).toBe("12100001");
+    expect(totalCentsFromAmount("-10.1000")).toBe("-1010");
+    expect(totalCentsFromAmount("121000.000")).toBe("12100000");
+    expect(totalCentsFromAmount("121000.0010")).toBeNull();
+    expect(totalCentsFromAmount("121000.0150")).toBeNull();
+    expect(totalCentsFromAmount("10.0001")).toBeNull();
+  });
+
   it("clave completa con el orden normativo", () => {
     expect(
       buildBusinessKey({

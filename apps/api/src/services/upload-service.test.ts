@@ -93,6 +93,13 @@ function createDeps(world: FakeWorld): UploadServiceDeps {
         world.files.set(key, Buffer.from(bytes));
       },
       getSignedUrl: async () => "token",
+      get: async ({ key }) => {
+        const found = world.files.get(key);
+        if (found === undefined) {
+          throw new Error("archivo no encontrado");
+        }
+        return found;
+      },
       deleteOrphan: async (key) => {
         world.deletes.push(key);
         world.files.delete(key);

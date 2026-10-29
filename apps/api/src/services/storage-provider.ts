@@ -23,6 +23,12 @@ export interface StorageProvider {
     bytes: Uint8Array;
     mimeType: string;
   }): Promise<void>;
+  /**
+   * Lee los bytes guardados bajo una clave. Agregado en B4: el
+   * worker necesita leer el archivo para extraerlo. Falla con
+   * `StorageReadError` si la clave no existe o no se puede leer.
+   */
+  get(input: { key: string }): Promise<Uint8Array>;
   getSignedUrl(input: {
     key: string;
     expiresInSeconds: number;

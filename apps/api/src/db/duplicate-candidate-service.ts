@@ -225,7 +225,12 @@ export interface CreateCandidateInput {
   kind: string;
   reasonCode: string;
   matchedFieldsJson?: Record<string, unknown>;
-  actorUserId: string;
+  /**
+   * Actor que crea el candidato. B4 lo extiende a null: el worker
+   * no tiene usuario y M-03 ya acepta actorId null (= sistema).
+   * Las resoluciones humanas siguen exigiendo string.
+   */
+  actorUserId: string | null;
 }
 
 export interface ResolveCandidateInput {
