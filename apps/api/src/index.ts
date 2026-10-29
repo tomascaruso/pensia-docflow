@@ -9,9 +9,20 @@
  *
  * Las variables se pasan por entorno del proceso (no hay loader
  * de `.env` en el proyecto; `.env.example` documenta los nombres).
+ *
+ * B4: en el mismo proceso arranca también el worker (salvo
+ * `WORKER_ENABLED=0`): reclama y procesa jobs de
+ * `processing_jobs`. Los tests nunca ejecutan este archivo.
  */
 import { buildApp } from "./app.js";
-import { auth, db } from "./auth/instance.js";
+import { auth, db, pool } from "./auth/instance.js";
+import { createLocalStorage } from "./services/storage-local.js";
+import { createExtractionProviderFromEnv } from "./services/extraction-stub.js";
+import { validateDocument } from "./services/validation-service.js";
+import { detectDuplicates } from "./services/duplicate-detection-b.js";
+import { createWorkerDeps } from "./worker/job-drizzle.js";
+import { processNext, recoverStale } from "./worker/job-processor.js";
+import { startWorkerLoop } from "./worker/index.js";
 
 function splitEnvList(name: string): string[] {
   const raw = process.env[name];
@@ -34,3 +45,58 @@ const app = buildApp({
 });
 await app.listen({ port, host });
 console.log(`pensia-docflow-api escuchando en http://${host}:${port}`);
+
+const workerEnabled = process.env.WORKER_ENABLED !== "0";
+let stopWorker: (() => void) | null = null;
+if (workerEnabled) {
+  const intervalMs = Number(process.env.WORKER_INTERVAL_MS ?? 5000);
+  const staleAfterMs = Number(
+    process.env.WORKER_STALE_PROCESSING_MS ?? 15 * 60 * 1000,
+  );
+  if (
+    !Number.isFinite(intervalMs) ||
+    intervalMs <= 0 ||
+    !Number.isFinite(staleAfterMs) ||
+    staleAfterMs <= 0
+  ) {
+    throw new Error("Variables de worker inválidas.");
+  }
+  const storage = createLocalStorage();
+  const extractor = createExtractionProviderFromEnv((key) =>
+    storage.get({ key }),
+  );
+  const deps = createWorkerDeps(db, {
+    storage,
+    extractor,
+    validate: validateDocument,
+    detect: detectDuplicates,
+    providerName: extractor.name,
+  });
+  const worker = startWorkerLoop(
+    {
+      processNext: (now) => processNext(deps, now),
+      recoverStale: (now, staleMs) => recoverStale(deps, now, staleMs),
+    },
+    {
+      intervalMs,
+      staleAfterMs,
+      onError: (error) => {
+        console.error("worker: error en tick (el bucle continúa):", error);
+      },
+    },
+  );
+  stopWorker = () => worker.stop();
+  console.log(
+    `pensia-docflow-worker activo en el proceso API (intervalo ${intervalMs} ms, proveedor ${extractor.name})`,
+  );
+}
+
+function shutdown(): void {
+  stopWorker?.();
+  void app
+    .close()
+    .then(() => pool.end())
+    .then(() => process.exit(0));
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

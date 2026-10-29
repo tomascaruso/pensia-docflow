@@ -60,6 +60,31 @@ describe("storage-local", () => {
     ).rejects.toBeInstanceOf(StorageWriteError);
   });
 
+  it("get lee los bytes escritos con put", async () => {
+    const { storage } = await tempStorage();
+    await storage.put({
+      key: "org-1/doc-1",
+      bytes: new Uint8Array([9, 8, 7]),
+      mimeType: "application/pdf",
+    });
+    const read = await storage.get({ key: "org-1/doc-1" });
+    expect(Buffer.from(read)).toEqual(Buffer.from([9, 8, 7]));
+  });
+
+  it("get de clave inexistente falla con StorageReadError", async () => {
+    const { storage } = await tempStorage();
+    await expect(storage.get({ key: "org-1/falta" })).rejects.toBeInstanceOf(
+      StorageReadError,
+    );
+  });
+
+  it("get rechaza claves con traversal", async () => {
+    const { storage } = await tempStorage();
+    await expect(storage.get({ key: "../escape" })).rejects.toBeInstanceOf(
+      StorageWriteError,
+    );
+  });
+
   it("getSignedUrl genera un token verificable", async () => {
     const { storage } = await tempStorage();
     const token = await storage.getSignedUrl({

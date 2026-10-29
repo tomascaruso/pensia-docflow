@@ -7,6 +7,7 @@
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
+    "start:worker": "tsx src/worker-entry.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "auth:generate": "npx @better-auth/cli@1.4.21 generate --config ./src/auth/instance.ts --output ./src/auth/tables.ts -y",

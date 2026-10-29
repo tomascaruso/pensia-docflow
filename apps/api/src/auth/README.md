@@ -428,3 +428,76 @@ migración ni cambia el esquema: todas las tablas ya existían.
 - **Servidor HTTP real no verificado:** como en B1, los tests
   usan Fastify inject; la verificación con servidor real queda
   para la fase de QA/deploy.
+
+## B4 — Worker y procesamiento
+
+Sin endpoints nuevos. El worker reclama jobs de `processing_jobs`
+y ejecuta el pipeline completo: leer → extraer (stub) → mapear →
+validar → detectar duplicados B → transacción final →
+`needs_review` + job `completed`.
+
+### Archivos
+
+- `worker/job-repository.ts`: reclamo atómico con
+  `FOR UPDATE SKIP LOCKED` (pending o failed con backoff
+  vencido), backoff 30 s / 2 min / blocked, idempotencyKey
+  determinista `<orgId>:<docId>:<fileHash>:<proveedor>`.
+- `worker/job-processor.ts`: orquestación pura sobre puertos;
+  transiciones M-01 (queued→processing, failed→queued con
+  intentos consumidos < 3, processing→needs_review/failed,
+  failed→blocked en dos pasos); fallo de auditoría en la tx
+  final → rollback total y luego failed.
+- `worker/job-drizzle.ts`: adaptadores Drizzle (documentos,
+  jobs, validaciones, candidatos vía A-01 con actor null,
+  auditoría M-03 con entityType `documents`).
+- `worker/index.ts`: bucle con `setTimeout` encadenado (sin
+  solapamiento); `start:worker` (`worker-entry.ts`) y arranque
+  en el mismo proceso del API salvo `WORKER_ENABLED=0`.
+- `services/extraction-provider.ts`, `extraction-stub.ts`
+  (determinista por SHA-256, 11 fixtures, `stub-1`),
+  `document-mapper.ts` (6 campos, líneas, columnas resueltas,
+  businessKey).
+- `services/validation-service.ts`: 7 reglas (required_fields,
+  date_format, currency_present, invoice_number_format,
+  line_items_sum, low_confidence; más duplicate_business_*
+  que agrega el procesador desde la detección).
+- `services/duplicate-detection-b.ts`: exacto → P1→P6, una fila
+  por par, `matchedFieldsJson` sin valores (D7).
+- `services/storage-provider.ts` + `storage-local.ts`: agregado
+  `get` (aditivo a B3) para que el worker lea el archivo.
+- `db/duplicate-candidate-service.ts`: `actorUserId` extendido
+  a `string | null` (el worker pasa null = sistema; cambio
+  mínimo en H3, sin cambio de comportamiento).
+- `db/business-key.ts`: `totalCentsFromAmount` acepta hasta 4
+  decimales si el 3º/4º son cero (NUMERIC(19,4) devuelve
+  "121000.0000"; sin esto la Detección B veía ausente el total
+  de todo documento guardado).
+
+### Variables de entorno
+
+- `EXTRACTION_PROVIDER` (default `stub`; otro valor falla
+  rápido al arrancar).
+- `WORKER_ENABLED` (default activo; `0` lo desactiva).
+- `WORKER_INTERVAL_MS` (default 5000).
+- `WORKER_STALE_PROCESSING_MS` (default 15 min).
+- `LOW_CONFIDENCE_THRESHOLD` (default 0,70).
+
+### Deudas de B4
+
+- **boundingBox y rawPayloadRef no persistidos:** el esquema H1
+  no tiene columnas; se pierden en el mapeo (persistirlos
+  requiere cambio de esquema con autorización aparte).
+- **line_items_sum con desviación:** la especificación la
+  define contra el subtotal, que no existe como campo; en B4
+  se compara contra el total y el mensaje lo dice explícito.
+- **Umbral low_confidence configurable** (env, default 0,70).
+- **Umbral stale 15 min configurable** (env; revisar con
+  proveedores reales en B7).
+- **amount_arithmetic y tax_arithmetic no implementadas:**
+  no existen campos subtotal/impuesto en H1.
+- **Servidor HTTP real no verificado:** como en B1, los tests
+  usan Fastify inject; la verificación con servidor real queda
+  para la fase de QA/deploy.
+- **WORKER_ENABLED desactivado en tests:** los tests unitarios
+  y de integración invocan `processNext`/`recoverStale`
+  directamente, nunca el bucle de temporizador.

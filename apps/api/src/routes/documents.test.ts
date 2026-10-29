@@ -99,6 +99,13 @@ function createFakeStorage(): UploadStoragePort & {
     put: async ({ key, bytes }) => {
       files.set(key, Buffer.from(bytes));
     },
+    get: async ({ key }) => {
+      const found = files.get(key);
+      if (found === undefined) {
+        throw new Error("archivo no encontrado");
+      }
+      return found;
+    },
     getSignedUrl: async () => "token",
     deleteOrphan: async (key) => {
       files.delete(key);
