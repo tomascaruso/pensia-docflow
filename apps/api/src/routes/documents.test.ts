@@ -152,6 +152,12 @@ const ADMIN = fakeUser("admin-01", "admin@example.com");
 
 async function makePdf(pages: number): Promise<Buffer> {
   const doc = await PDFDocument.create();
+  // Fechas fijas: pdf-lib incrusta CreationDate/ModDate de pared y
+  // el PDF variaba por segundo (eso alimentaba el flaky B en la
+  // auditoría del upload). Con fechas fijas el PDF es determinista.
+  const fixedDate = new Date("2026-01-01T00:00:00Z");
+  doc.setCreationDate(fixedDate);
+  doc.setModificationDate(fixedDate);
   for (let i = 0; i < pages; i++) {
     doc.addPage();
   }

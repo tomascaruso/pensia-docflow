@@ -334,6 +334,20 @@ const PROHIBITED_VALUE_MARKERS: ReadonlyArray<string> = [
 ];
 
 /**
+ * Exención D7 (fix Flaky B): un SHA-256 en hex (64 caracteres
+ * [0-9a-f], el formato que emite `file_hash`) no se escanea con el
+ * regex CUIT: una corrida de 11 dígitos dentro de un hash es un
+ * falso positivo, no un CUIT. Solo exime el regex CUIT; el chequeo
+ * por nombre de campo y los marcadores de valor siguen activos, y
+ * un CUIT real (11 dígitos fuera de un hash) sigue rechazándose.
+ */
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
+
+function isSha256Hex(value: string): boolean {
+  return SHA256_HEX_PATTERN.test(value);
+}
+
+/**
  * Indica si algún valor de cadena, en cualquier profundidad (objetos
  * y arreglos), trae un patrón sensible prohibido. Los valores no
  * cadena (números, booleanos, null) no se escanean: un importe como
@@ -341,7 +355,10 @@ const PROHIBITED_VALUE_MARKERS: ReadonlyArray<string> = [
  */
 function findProhibitedValue(value: unknown): boolean {
   if (typeof value === "string") {
-    if (PROHIBITED_VALUE_PATTERNS.some((re) => re.test(value))) {
+    if (
+      !isSha256Hex(value) &&
+      PROHIBITED_VALUE_PATTERNS.some((re) => re.test(value))
+    ) {
       return true;
     }
     const normalized = value.toLowerCase().replace(/[_\- ]/g, "");

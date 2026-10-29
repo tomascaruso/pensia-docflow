@@ -100,7 +100,9 @@ describe("storage-local", () => {
       key: "org-1/doc-1",
       expiresInSeconds: 3600,
     });
-    const tampered = `${token.slice(0, -1)}0`;
+    const last = token[token.length - 1];
+    const replacement = last === "0" ? "1" : "0";
+    const tampered = `${token.slice(0, -1)}${replacement}`;
     expect(storage.verifySignedToken("org-1/doc-1", tampered)).toBe(false);
   });
 

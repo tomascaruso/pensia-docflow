@@ -358,6 +358,55 @@ describe("writeAuditEvent — casos válidos (M-03, positivas)", () => {
   });
 });
 
+describe("writeAuditEvent — exención SHA-256 en el scan CUIT (D7, fix Flaky B)", () => {
+  // Hash real capturado en el diagnóstico del flaky: contiene la
+  // corrida de 11 dígitos "43559247669" y el regex CUIT viejo lo
+  // rechazaba como falso positivo.
+  const HASH_CON_11_DIGITOS =
+    "77b43559247669cb07150e0843d9a5e2628cd2246135acc0a9ef03bacade3fe9";
+
+  it("acepta un file_hash SHA-256 aunque contenga 11 dígitos corridos", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    const record = await writeAuditEvent(
+      { resolver, store },
+      {
+        ...baseInput,
+        action: "document.uploaded",
+        details: { file_hash: HASH_CON_11_DIGITOS },
+      },
+    );
+    expect(store.inserts).toHaveLength(1);
+    expect(record.detailsJson).toEqual({
+      file_hash: HASH_CON_11_DIGITOS,
+    });
+  });
+
+  it("sigue rechazando un valor no-hash con 11 dígitos", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await expect(
+      writeAuditEvent(
+        { resolver, store },
+        { ...baseInput, details: { file_hash: "cuit 20123456789" } },
+      ),
+    ).rejects.toBeInstanceOf(AuditSensitiveDetailsError);
+    expect(store.inserts).toHaveLength(0);
+  });
+
+  it("sigue rechazando por nombre de campo aunque el valor parezca hash", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await expect(
+      writeAuditEvent(
+        { resolver, store },
+        { ...baseInput, details: { cuit: HASH_CON_11_DIGITOS } },
+      ),
+    ).rejects.toBeInstanceOf(AuditSensitiveDetailsError);
+    expect(store.inserts).toHaveLength(0);
+  });
+});
+
 describe("audit-writer — prueba estructural (único camino)", () => {
   it("ningún archivo de src (salvo tests) inserta en audit_events fuera de audit-writer.ts, y nadie actualiza ni borra", () => {
     const srcDir = fileURLToPath(new URL("../", import.meta.url));
