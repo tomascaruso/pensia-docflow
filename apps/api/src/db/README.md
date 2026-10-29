@@ -46,6 +46,16 @@ conexión, autenticación, endpoints ni permisos ejecutables en esta etapa.
 - `drizzle/`: migraciones generadas con Drizzle Kit (solo SQL versionado,
   sin aplicar en ningún entorno hasta que `db:migrate` se ejecute
   contra una instancia autorizada).
+- `audit-writer.ts` (H3 M-03): único camino de aplicación para insertar
+  en `audit_events`. Deriva la organización desde la entidad (nunca la
+  acepta del llamador, salvo como restricción de verificación) y
+  rechaza contenido sensible en `details_json` (D7, sin sanitizar).
+  D7 ampliada: `file_name` NO es sensible (metadato, no contenido) y
+  figura en la lista explícita de claves permitidas del escritor. El
+  `id` opcional del evento está RESTRINGIDO a fixtures/tests (seeds
+  idempotentes); los servicios lo omiten siempre y la base genera el
+  id. Adaptadores Drizzle reales en el mismo archivo; `seed.ts` ya
+  escribe auditoría únicamente por esta vía.
 
 ## Comandos (desde `apps/api`)
 
@@ -71,5 +81,76 @@ sh scripts/test-destination-gate.sh   # sin PostgreSQL real: verifica la puerta 
    (hoy solo hay comprobaciones estáticas y de fixtures).
 4. `EXPLAIN` de las consultas de S2/S3/S6 para confirmar que los índices
    se usan como se espera.
+
+## Recuperación de PostgreSQL local tras reemplazo de VM
+
+**Síntoma.** Tras un reemplazo de la VM, los binarios de PostgreSQL
+y el usuario `postgres` desaparecen (el sistema es efímero), pero el
+data dir persiste porque vive en home:
+`/home/hatch/.local/share/docflow-pg/data`. El `postmaster.pid`
+viejo queda huérfano y ningún proceso `postgres` corre.
+
+**Acción (procedimiento aplicado el 28-oct-2026).**
+
+1. Reinstalar el servidor (sin tocar el data dir):
+   `apt-get install -y postgresql-16 postgresql-client-16`.
+   La instalación recrea el usuario `postgres`; verificar que su
+   uid/gid coincidan con el dueño del data dir (en la recuperación
+   del 28-oct fueron `103`/`105`, sin necesidad de `chown`).
+2. **No hacer `initdb`.** Re-inicializar destruiría la base existente.
+   Levantar el cluster existente con su propio data dir:
+   `su postgres -c 'pg_ctl -D /home/hatch/.local/share/docflow-pg/data -l /home/hatch/.local/share/docflow-pg/log.txt start'`.
+3. Si `pg_ctl` da `Permission denied` sobre el data dir, es la
+   travesía de los padres: otorgar solo travesía (sin lectura) con
+   `chmod o+x /home/hatch` y reintentar.
+4. Verificar con `pg_isready -h 127.0.0.1 -p 5432` y con los conteos
+   de `docflow_dev` (deben coincidir con el baseline de fixtures).
+
+**Advertencia.** Nunca re-inicializar el data dir ni tocar
+`docflow_dev` sin respaldo. El data dir es la única copia de la base
+de desarrollo; `initdb` sobre él es destructivo e irreversible.
+
+**Nota.** El cluster por defecto que crea el paquete no arranca
+(`invoke-rc.d: policy-rc.d denied execution of start`), así que el
+puerto `5432` queda libre para el cluster de DocFlow (que escucha
+solo en `127.0.0.1` según su `postgresql.conf`).
+
+## Deudas de H3
+
+Controles de integridad que M-01 (y H3 en general) NO cierran; la
+composición con ellos debe ocurrir antes de exponer la aprobación
+por endpoints:
+
+- **`approvedValue` (H8).** M-01 verifica que el valor actual refleje
+  la corrección aprobada, pero no escribe `approvedValue`; la
+  escritura corresponde a H8. La composición con H8 debe garantizar
+  que al aprobar, el valor quede escrito en la misma transacción o
+  en una coordinada.
+- **Composición con validaciones (errores bloqueantes).** M-01 no
+  verifica errores de validación de severidad error: el flujo de
+  aprobación debe comprobarlos antes de llamar a `decide`, o la
+  aprobación podría fijar un documento con errores bloqueantes.
+- **A-01 (candidatos pendientes).** M-01 no verifica candidatos
+  duplicados pendientes: nadie debe aprobar con ningún candidato
+  `pending` (PD-14), y ese control lo aporta A-01 al componer con
+  la decisión.
+- **A-01 provee `hasBlockingCandidates`; el cableado con el flujo
+  de aprobación (PD-14) llega con los endpoints.** La composición
+  con M-01 debe garantizar que al aprobar, no haya candidatos
+  pendientes.
+- **A-02: re-verificación en el momento de generar archivos
+  (segundo punto de D4) se implementa con el flujo de generación
+  (endpoints).** `verifyExportForGeneration` ya está implementada.
+- **A-01: cuarentena comprimida en `overridden` + evento
+  `quarantined` + justificación `cross_org_legacy`;** una migración
+  futura puede agregar `quarantined` al CHECK de
+  `duplicate_candidates_status_check` con autorización de esquema.
+- **A-01: `resolveCandidate` audita cuarentena-detectada y luego
+  lanza; el llamador NO debe abortar la transacción al capturar
+  `DuplicateCandidateQuarantinedError` o el evento se pierde.**
+- **A-01: endpoints deben exigir justificación real para
+  `overridden`.**
+- **A-01: unique de par en `duplicate_candidates` no mapeado a
+  error de dominio; los endpoints deben mapearlo.**
 
 Ver el documento completo de decisiones en `docs/H1-MODELO-DATOS.md`.
