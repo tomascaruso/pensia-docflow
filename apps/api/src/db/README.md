@@ -119,25 +119,24 @@ solo en `127.0.0.1` según su `postgresql.conf`).
 
 Controles de integridad que M-01 (y H3 en general) NO cierran; la
 composición con ellos debe ocurrir antes de exponer la aprobación
-por endpoints:
+por endpoints. **B5 cerró las cuatro primeras (ver B5 en
+`src/auth/README.md`); las restantes siguen abiertas.**
 
-- **`approvedValue` (H8).** M-01 verifica que el valor actual refleje
-  la corrección aprobada, pero no escribe `approvedValue`; la
-  escritura corresponde a H8. La composición con H8 debe garantizar
-  que al aprobar, el valor quede escrito en la misma transacción o
-  en una coordinada.
-- **Composición con validaciones (errores bloqueantes).** M-01 no
-  verifica errores de validación de severidad error: el flujo de
-  aprobación debe comprobarlos antes de llamar a `decide`, o la
-  aprobación podría fijar un documento con errores bloqueantes.
-- **A-01 (candidatos pendientes).** M-01 no verifica candidatos
-  duplicados pendientes: nadie debe aprobar con ningún candidato
-  `pending` (PD-14), y ese control lo aporta A-01 al componer con
-  la decisión.
+- **`approvedValue` (H8) — CERRADA en B5.** M-01 verifica que el
+  valor actual refleje la corrección aprobada, pero no escribe
+  `approvedValue`; B5 la escribe en la misma transacción de la
+  decisión mediante el puerto opcional `writeApprovedValues`.
+- **Composición con validaciones (errores bloqueantes) —
+  CERRADA en B5.** El orquestador de decisión comprueba las
+  validaciones activas de severidad `error` antes de llamar a
+  `decide` (con la exclusión Q-B5-11 para
+  `duplicate_business_*` con candidato no pendiente).
+- **A-01 (candidatos pendientes) — CERRADA en B5.** Nadie
+  aprueba con ningún candidato `pending` efectivo (PD-14),
+  compuesto en el orquestador de decisión.
 - **A-01 provee `hasBlockingCandidates`; el cableado con el flujo
-  de aprobación (PD-14) llega con los endpoints.** La composición
-  con M-01 debe garantizar que al aprobar, no haya candidatos
-  pendientes.
+  de aprobación (PD-14) — CERRADO en B5** (el orquestador usa
+  el predicado PD-14 en línea sobre `findPendingByDocument`).
 - **A-02: re-verificación en el momento de generar archivos
   (segundo punto de D4) se implementa con el flujo de generación
   (endpoints).** `verifyExportForGeneration` ya está implementada.
@@ -148,8 +147,10 @@ por endpoints:
 - **A-01: `resolveCandidate` audita cuarentena-detectada y luego
   lanza; el llamador NO debe abortar la transacción al capturar
   `DuplicateCandidateQuarantinedError` o el evento se pierde.**
+  (B5 lo cumple: la ruta de resolve captura DENTRO de la
+  transacción.)
 - **A-01: endpoints deben exigir justificación real para
-  `overridden`.**
+  `overridden`.** (B5 lo cumple en el servicio de resolve.)
 - **A-01: unique de par en `duplicate_candidates` no mapeado a
   error de dominio; los endpoints deben mapearlo.**
 

@@ -99,7 +99,7 @@ export interface DecisionRepository {
     decidedBy: string;
     decision: DocumentDecision;
     justification: string | null;
-  }): Promise<{ id: string }>;
+  }): Promise<{ id: string; decidedAt?: string }>;
 }
 
 export type DecisionAudit = (input: AuditEventInput) => Promise<unknown>;
@@ -117,6 +117,14 @@ export interface DecisionServiceDeps {
   audit: DecisionAudit;
   permissions: DecisionPermissionPort;
   transact<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * Agregado en B5 (opcional, aditivo): si está presente y la
+   * decisión es approved, `decide` lo invoca dentro de la misma
+   * transacción, después del cambio de estado y antes de la
+   * auditoría. Es el punto H8 donde se escribe `approvedValue`.
+   * Ausente, `decide` se comporta exactamente como antes.
+   */
+  writeApprovedValues?: (documentId: string) => Promise<void>;
 }
 
 export interface DecideInput {
@@ -131,6 +139,12 @@ export interface DecideResult {
   documentId: string;
   status: DocumentStatus;
   decisionId: string;
+  /**
+   * Agregado en B5 (opcional): instante en que se decidió, tal como
+   * lo devuelve el repositorio. Ausente en repositorios viejos; la
+   * ruta lo omite en ese caso en vez de inventarlo.
+   */
+  decidedAt?: string;
 }
 
 /**
@@ -181,17 +195,26 @@ export async function decide(
       justification: input.justification ?? null,
     });
     await deps.documents.updateStatus(input.documentId, target);
+    if (input.decision === "approved" && deps.writeApprovedValues) {
+      await deps.writeApprovedValues(input.documentId);
+    }
     await deps.audit({
       actorId: input.actorUserId,
       action: `document.${input.decision}`,
       entityType: "document",
       entityId: input.documentId,
-      details: { decision: input.decision },
+      details: {
+        decision: input.decision,
+        has_corrections: doc.corrections.length > 0,
+      },
     });
     return {
       documentId: input.documentId,
       status: target,
       decisionId: inserted.id,
+      ...(inserted.decidedAt !== undefined
+        ? { decidedAt: inserted.decidedAt }
+        : {}),
     };
   });
 }

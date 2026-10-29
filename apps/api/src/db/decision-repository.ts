@@ -38,7 +38,7 @@ export interface DrizzleDecisionRepository {
     decidedBy: string;
     decision: DocumentDecision;
     justification: string | null;
-  }): Promise<{ id: string }>;
+  }): Promise<{ id: string; decidedAt?: string }>;
 }
 
 export function createDrizzleDecisionRepository(
@@ -54,7 +54,10 @@ export function createDrizzleDecisionRepository(
           decision: decision.decision,
           justification: decision.justification,
         })
-        .returning({ id: schema.documentDecisions.id });
+        .returning({
+          id: schema.documentDecisions.id,
+          decidedAt: schema.documentDecisions.decidedAt,
+        });
       const row = rows[0];
       const id = row === undefined ? null : row["id"];
       if (typeof id !== "string") {
@@ -62,7 +65,17 @@ export function createDrizzleDecisionRepository(
           "decision-repository: el insert no devolvió la decisión.",
         );
       }
-      return { id };
+      const decidedAtRaw = row["decidedAt"];
+      const decidedAt =
+        decidedAtRaw instanceof Date
+          ? decidedAtRaw.toISOString()
+          : typeof decidedAtRaw === "string"
+            ? decidedAtRaw
+            : undefined;
+      return {
+        id,
+        ...(decidedAt !== undefined ? { decidedAt } : {}),
+      };
     },
   };
 }

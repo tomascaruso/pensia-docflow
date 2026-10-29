@@ -38,6 +38,20 @@ import {
   DecisionForbiddenError,
 } from "../db/decision-service.js";
 import {
+  DecisionBlockedByCandidatesError,
+  DecisionBlockedByValidationsError,
+  InvalidDecisionRequestError,
+} from "../services/decision-orchestrator.js";
+import {
+  InvalidResolveRequestError,
+} from "../services/duplicate-resolve-service.js";
+import {
+  JobAlreadyCompletedError,
+  JobNotRetryableError,
+  RetryDocumentNotFoundError,
+  RetryForbiddenError,
+} from "../services/retry-service.js";
+import {
   DuplicateCandidateAlreadyResolvedError,
   DuplicateCandidateCrossOrgError,
   DuplicateCandidateDocumentNotFoundError,
@@ -90,6 +104,19 @@ export interface HttpErrorBody {
   message: string;
   /** Solo para duplicados: id del documento existente. */
   id?: string;
+  /**
+   * Agregado en B5: bloqueantes de una decisión rechazada con 409
+   * (candidatos pendientes o validaciones activas). Contenido
+   * D7-seguro: ids, códigos de regla y mensajes de sistema.
+   */
+  blockers?: {
+    candidates?: Array<{ id: string; kind: string; reasonCode: string }>;
+    validations?: Array<{
+      ruleCode: string;
+      message: string;
+      fieldKey: string | null;
+    }>;
+  };
 }
 
 const NOT_FOUND: HttpErrorBody = {
@@ -153,6 +180,56 @@ export function toHttp(error: unknown): HttpErrorBody | null {
   }
   if (error instanceof DecisionDocumentNotFoundError) {
     return NOT_FOUND;
+  }
+  if (error instanceof DecisionBlockedByCandidatesError) {
+    return {
+      status: 409,
+      code: "decision_blocked_by_candidates",
+      message: "Hay candidatos duplicados pendientes de resolver.",
+      blockers: { candidates: error.blockers.candidates },
+    };
+  }
+  if (error instanceof DecisionBlockedByValidationsError) {
+    return {
+      status: 409,
+      code: "decision_blocked_by_validations",
+      message: "Hay validaciones bloqueantes activas.",
+      blockers: { validations: error.blockers.validations },
+    };
+  }
+  if (error instanceof InvalidDecisionRequestError) {
+    return {
+      status: 400,
+      code: "invalid_request",
+      message: error.message.replace(/^decision-orchestrator: /, ""),
+    };
+  }
+  if (error instanceof RetryDocumentNotFoundError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof RetryForbiddenError) {
+    return FORBIDDEN;
+  }
+  if (error instanceof JobNotRetryableError) {
+    return {
+      status: 409,
+      code: "job_not_retryable",
+      message: "El trabajo no está en un estado reintentable.",
+    };
+  }
+  if (error instanceof JobAlreadyCompletedError) {
+    return {
+      status: 409,
+      code: "job_already_completed",
+      message: "El trabajo ya está completado.",
+    };
+  }
+  if (error instanceof InvalidResolveRequestError) {
+    return {
+      status: 400,
+      code: "invalid_request",
+      message: error.message.replace(/^duplicate-resolve: /, ""),
+    };
   }
   if (error instanceof DuplicateCandidateCrossOrgError) {
     return NOT_FOUND;

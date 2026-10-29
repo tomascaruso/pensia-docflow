@@ -508,3 +508,127 @@ validar → detectar duplicados B → transacción final →
   corresponde a las validaciones deterministas de B4). Fuzzing de
   D7 con 1.000 valores aleatorios agregado en
   audit-writer.test.ts.
+
+## B5 — Revisión y decisiones
+
+Cierra el flujo de negocio: decidir (aprobar/rechazar),
+reencolar trabajos y resolver candidatos duplicados, más la
+descarga del archivo original. Sin migración: todas las columnas
+ya existían.
+
+### Endpoints nuevos
+
+- `POST /organizations/:orgId/documents/:docId/decisions`
+  (sesión + membresía + `requireRole` con permiso
+  `approve_documents`, denegación auditada como
+  `document.decision_denied`). Cuerpo: `{ decision: "approved" |
+  "rejected", justification?, corrections?: [{ fieldKey,
+  correctedValue }] }`. Respuesta 200: `{ id, status, decision:
+  { id, decision, decidedAt? } }`.
+- `POST /organizations/:orgId/documents/:docId/retry` (sesión +
+  membresía; el rol lo decide el servicio según el estado del
+  trabajo). Respuesta 200: `{ documentId, jobStatus, retriedAt,
+  previousStatus, attempts }`.
+- `POST /organizations/:orgId/duplicate-candidates/:candidateId/resolve`
+  (sesión + membresía; el permiso depende de la resolución).
+  Respuesta 200: `{ id, status, resolvedBy, resolvedAt }`.
+- `GET /organizations/:orgId/documents/:docId/file` (sesión +
+  membresía). Streaming directo del `StorageProvider` con
+  `Content-Disposition: attachment`; archivo inexistente → 404.
+
+### Decisiones de B5 (resueltas por el orquestador)
+
+- **Bloqueos → 409 con cuerpo `blockers`.** Candidatos
+  pendientes efectivos (PD-14) y validaciones activas de
+  severidad `error` bloquean la aprobación; el handler de
+  errores propaga `blockers` (candidatos: id/kind/reasonCode;
+  validaciones: ruleCode/message/fieldKey).
+- **approvedValue (H8, cerrada).** Al aprobar, `decide` invoca el
+  puerto opcional `writeApprovedValues` dentro de la misma
+  transacción: snapshot completo de las 6 filas de
+  `document_fields` con los valores resueltos. La extensión de
+  `decision-service.ts` es aditiva: los 9 tests existentes de
+  `decide()` pasan sin modificaciones, y la auditoría suma
+  `has_corrections`.
+- **Transiciones/coherencia → 422, sin idempotencia.**
+- **Q-B5-5:** `blocked → queued` resetea `attempts` a 0
+  (obligatorio por el CHECK `attempts <= maxAttempts`).
+- **Q-B5-10:** `rejected` exige `justification` no vacía.
+- **Q-B5-11:** las filas `duplicate_business_*` NO bloquean si
+  su candidato ya no está pendiente (el estado
+  `document_validations` solo admite `active` /
+  `exception_accepted`, así que no se puede marcar resuelta sin
+  migración; la exclusión se resuelve por composición).
+- **Q-B5-12:** cualquier corrección recalcula `businessKey`
+  (las 6 claves del vocabulario son componentes de la clave).
+- **Q-B5-13:** GET file incluido con streaming directo; el
+  token HMAC de `storage-local.ts` queda para la futura
+  migración a S3.
+- **Q-B5-14:** la rama `failed` agotado → `blocked` es
+  defensiva (el worker nunca la produce) y solo la puede tomar
+  un `org_admin`; un miembro recibe 403 auditado fuera de la
+  transacción (D8).
+- **Q-B5-15:** correcciones con `rejected` → 400.
+- **Q7 manda sobre PD-13:** `blocked → queued` solo
+  `org_admin`; `failed → queued` con intentos restantes, por
+  cualquier miembro.
+- **Códigos HTTP de retry:** `job_not_retryable` /
+  `job_already_completed` (409), `forbidden` (403), genérico
+  404 sin trabajo o documento de otra org. (La orden nombraba
+  los códigos en mayúsculas; la API usa minúsculas
+  snake_case como el resto del mapeo.)
+- **Adaptación sub-paso 1b:** `updateStatus` NO devuelve
+  `resolvedBy`/`resolvedAt` (la interfaz del repositorio no
+  tiene cadena update-returning); esos valores se obtienen por
+  relectura con `findCandidate` tras resolver, con el mismo
+  resultado observable.
+- **Adaptación fake:** `findPendingByDocument`,
+  `documentOrgs` y `documentStatuses` pasaron de `or()` /
+  `inArray()` a consultas eq por id (el fake solo evalúa
+  eq/and); comportamiento idéntico contra Postgres real.
+
+### Archivos
+
+- `db/validation-drizzle.ts`: puerto
+  `findActiveBlockingValidations` (severity error + status
+  active, con ruleCode para la exclusión Q-B5-11).
+- `db/corrections-drizzle.ts`: aplicar correcciones (campos +
+  columnas resueltas + businessKey), listar claves extraídas y
+  escribir approvedValue.
+- `services/decision-orchestrator.ts`: composición en una
+  transacción (pre-chequeos → PD-14 → validaciones →
+  correcciones → `decide` → approvedValue) con errores
+  tipados y `blockers`.
+- `services/retry-service.ts` + `db/retry-drizzle.ts`: PD-13 +
+  Q7, último trabajo de extracción por `scheduledAt` (sin
+  `orderBy`: el fake no lo evalúa; la tabla no tiene
+  `createdAt`).
+- `services/duplicate-resolve-service.ts`: guardia orgId,
+  justificación real para `overridden`, relectura de
+  resolvedBy/resolvedAt.
+- `routes/decisions.ts`, `routes/retry.ts`,
+  `routes/duplicate-candidates.ts` (contrato de cuarentena:
+  captura DENTRO de la transacción para que confirme),
+  `routes/documents-file.ts` + `db/document-file-drizzle.ts`.
+- `errors/http-mapping.ts`: 409 con `blockers`, 400/403/404
+  de retry y resolve; `app.ts` propaga `blockers` en el cuerpo
+  de error.
+
+### Deudas de B5
+
+- **Q8 (`exception_accepted`) diferida a post-B6:** el flujo
+  para aceptar un error como excepción sigue sin endpoint.
+- **A-02:** la re-verificación en generación sigue sin
+  cablear (B6).
+- **Cuarentena comprimida en `overridden`:** sin cambios (ver
+  deudas de H3).
+- **Unique de par de candidatos sin mapear a error de
+  dominio:** sin cambios (ver deudas de H3).
+- **Denegación de retry en tests de ruta con fake:** la
+  auditoría `document.retry_denied` se emite fuera de la
+  transacción, pero el fake restaura un snapshot de todas las
+  tablas al revertir y la borra en el test de ruta; contra
+  Postgres real persiste (transacción separada). Se prueba a
+  nivel de servicio y se afirma en la integración.
+- **Servidor HTTP real no verificado:** como en B1, los tests
+  usan Fastify inject.

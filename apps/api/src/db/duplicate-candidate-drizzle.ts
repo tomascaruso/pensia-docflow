@@ -3,16 +3,16 @@
  *
  * Misma sintaxis de método mínima que los adaptadores de M-02 y
  * M-03 (la satisfacen `db` y `tx`). Las búsquedas de organización
- * y estado de los dos documentos de un candidato se hacen con una
- * sola consulta `inArray` y un mapa en memoria: preciso contra la
- * base real y tratable con fakes (que ignoran el `where`).
+ * y estado de los dos documentos de un candidato se hacen con
+ * consultas eq por id y un mapa en memoria (B5: el fake de tests
+ * solo evalúa eq/and; antes era una sola consulta `inArray`).
  *
  * `updateStatus` escribe además `resolved_by` y `resolved_at`
  * (columnas anulables de la tabla): el actor queda en la fila y en
  * la auditoría.
  */
 
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as schema from "./schema.js";
 import {
   createDrizzleAuditEventStore,
@@ -76,18 +76,26 @@ async function documentOrgs(
   db: CandidateDrizzleClient,
   documentIds: string[],
 ): Promise<Map<string, string | null>> {
-  const rows = await db
-    .select({
-      id: schema.documents.id,
-      organizationId: schema.documents.organizationId,
-    })
-    .from(schema.documents)
-    .where(inArray(schema.documents.id, documentIds));
+  // B5: consultas eq por id en vez de `inArray`. El resultado es el
+  // mismo (mapa id → org) y el fake de tests solo evalúa eq/and.
+  // Se mapean TODAS las filas devueltas (no solo rows[0]): el fake
+  // de adaptadores ignora el `where` y devuelve todas las filas de
+  // la tabla, así que rows[0] sería siempre el mismo documento.
   const map = new Map<string, string | null>();
-  for (const row of rows) {
-    const id = asStringOrNull(row["id"]);
-    if (id !== null) {
-      map.set(id, asStringOrNull(row["organizationId"]));
+  for (const documentId of documentIds) {
+    const rows = await db
+      .select({
+        id: schema.documents.id,
+        organizationId: schema.documents.organizationId,
+      })
+      .from(schema.documents)
+      .where(eq(schema.documents.id, documentId))
+      .limit(1);
+    for (const row of rows) {
+      const id = asStringOrNull(row["id"]);
+      if (id !== null) {
+        map.set(id, asStringOrNull(row["organizationId"]));
+      }
     }
   }
   return map;
@@ -97,18 +105,23 @@ async function documentStatuses(
   db: CandidateDrizzleClient,
   documentIds: string[],
 ): Promise<Map<string, string | null>> {
-  const rows = await db
-    .select({
-      id: schema.documents.id,
-      status: schema.documents.status,
-    })
-    .from(schema.documents)
-    .where(inArray(schema.documents.id, documentIds));
+  // B5: igual que documentOrgs (eq por id, sin `inArray`; se mapean
+  // todas las filas devueltas por la misma razón).
   const map = new Map<string, string | null>();
-  for (const row of rows) {
-    const id = asStringOrNull(row["id"]);
-    if (id !== null) {
-      map.set(id, asStringOrNull(row["status"]));
+  for (const documentId of documentIds) {
+    const rows = await db
+      .select({
+        id: schema.documents.id,
+        status: schema.documents.status,
+      })
+      .from(schema.documents)
+      .where(eq(schema.documents.id, documentId))
+      .limit(1);
+    for (const row of rows) {
+      const id = asStringOrNull(row["id"]);
+      if (id !== null) {
+        map.set(id, asStringOrNull(row["status"]));
+      }
     }
   }
   return map;
@@ -142,6 +155,8 @@ export function createDrizzleCandidateRepository(
           candidateDocumentId: schema.duplicateCandidates.candidateDocumentId,
           kind: schema.duplicateCandidates.kind,
           status: schema.duplicateCandidates.status,
+          resolvedBy: schema.duplicateCandidates.resolvedBy,
+          resolvedAt: schema.duplicateCandidates.resolvedAt,
         })
         .from(schema.duplicateCandidates)
         .where(eq(schema.duplicateCandidates.id, candidateId))
@@ -166,6 +181,8 @@ export function createDrizzleCandidateRepository(
         return null;
       }
       const orgs = await documentOrgs(db, [documentId, candidateDocumentId]);
+      const resolvedByRaw = row["resolvedBy"];
+      const resolvedAtRaw = row["resolvedAt"];
       return {
         id,
         documentId,
@@ -175,6 +192,12 @@ export function createDrizzleCandidateRepository(
         documentOrganizationId: orgs.get(documentId) ?? null,
         candidateDocumentOrganizationId:
           orgs.get(candidateDocumentId) ?? null,
+        resolvedBy:
+          typeof resolvedByRaw === "string" ? resolvedByRaw : null,
+        resolvedAt:
+          resolvedAtRaw instanceof Date || typeof resolvedAtRaw === "string"
+            ? resolvedAtRaw
+            : null,
       };
     },
     async insert(input) {
@@ -204,24 +227,50 @@ export function createDrizzleCandidateRepository(
         .where(eq(schema.duplicateCandidates.id, candidateId));
     },
     async findPendingByDocument(documentId) {
-      const rows = await db
-        .select({
-          id: schema.duplicateCandidates.id,
-          documentId: schema.duplicateCandidates.documentId,
-          candidateDocumentId:
-            schema.duplicateCandidates.candidateDocumentId,
-          status: schema.duplicateCandidates.status,
-        })
+      // B5: dos consultas AND en vez de una con OR. El resultado es
+      // el mismo (unión de ambos lados, solo pending), pero el fake
+      // de tests solo evalúa cadenas AND de eq/isNull y el `or`
+      // original lo hacía incompatible con las pruebas de ruta.
+      // Se deduplica por id: un candidato no puede aparecer en
+      // ambas consultas salvo que documentId sea ambos lados, caso
+      // imposible por el CHECK documentId <> candidateDocumentId.
+      const fields = {
+        id: schema.duplicateCandidates.id,
+        documentId: schema.duplicateCandidates.documentId,
+        candidateDocumentId:
+          schema.duplicateCandidates.candidateDocumentId,
+        kind: schema.duplicateCandidates.kind,
+        reasonCode: schema.duplicateCandidates.reasonCode,
+        status: schema.duplicateCandidates.status,
+      };
+      const asSide = await db
+        .select(fields)
         .from(schema.duplicateCandidates)
         .where(
           and(
-            or(
-              eq(schema.duplicateCandidates.documentId, documentId),
-              eq(schema.duplicateCandidates.candidateDocumentId, documentId),
-            ),
+            eq(schema.duplicateCandidates.documentId, documentId),
             eq(schema.duplicateCandidates.status, "pending"),
           ),
-        );
+        )
+        .limit(100);
+      const asCandidate = await db
+        .select(fields)
+        .from(schema.duplicateCandidates)
+        .where(
+          and(
+            eq(schema.duplicateCandidates.candidateDocumentId, documentId),
+            eq(schema.duplicateCandidates.status, "pending"),
+          ),
+        )
+        .limit(100);
+      const byId = new Map<string, Record<string, unknown>>();
+      for (const row of [...asSide, ...asCandidate]) {
+        const id = asStringOrNull(row["id"]);
+        if (id !== null && !byId.has(id)) {
+          byId.set(id, row);
+        }
+      }
+      const rows = [...byId.values()];
       const docIds = new Set<string>();
       for (const row of rows) {
         const a = asStringOrNull(row["documentId"]);
@@ -246,9 +295,44 @@ export function createDrizzleCandidateRepository(
           status,
           documentStatus: statuses.get(a) ?? null,
           candidateDocumentStatus: statuses.get(b) ?? null,
+          kind: asStringOrNull(row["kind"]),
+          reasonCode: asStringOrNull(row["reasonCode"]),
         });
       }
       return out;
+    },
+  };
+}
+
+/**
+ * DocFlow B5 — Puerto de existencia de candidatos.
+ *
+ * Lo usa el orquestador de decisiones para la exclusión Q-B5-11:
+ * una fila duplicate_business_* solo se excluye del bloqueo si el
+ * documento tiene algún candidato (resuelto o emparejado con un
+ * rechazado); sin ningún candidato, la fila se mantiene como
+ * bloqueante (fail-closed). Dos consultas eq simples para ser
+ * compatible con el fake de tests (sin OR).
+ */
+export function createCandidateExistencePort(db: CandidateDrizzleClient) {
+  return {
+    async hasCandidates(documentId: string): Promise<boolean> {
+      const asSide = await db
+        .select({ id: schema.duplicateCandidates.id })
+        .from(schema.duplicateCandidates)
+        .where(eq(schema.duplicateCandidates.documentId, documentId))
+        .limit(1);
+      if (asSide.length > 0) {
+        return true;
+      }
+      const asCandidate = await db
+        .select({ id: schema.duplicateCandidates.id })
+        .from(schema.duplicateCandidates)
+        .where(
+          eq(schema.duplicateCandidates.candidateDocumentId, documentId),
+        )
+        .limit(1);
+      return asCandidate.length > 0;
     },
   };
 }
