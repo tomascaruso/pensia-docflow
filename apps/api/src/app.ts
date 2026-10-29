@@ -40,6 +40,7 @@ import { registerDecisionRoutes } from "./routes/decisions.js";
 import { registerRetryRoutes } from "./routes/retry.js";
 import { registerDuplicateCandidateRoutes } from "./routes/duplicate-candidates.js";
 import { registerDocumentsFileRoutes } from "./routes/documents-file.js";
+import { registerExportRoutes } from "./routes/exports.js";
 import {
   MAX_FILE_BYTES,
   type UploadStoragePort,
@@ -132,6 +133,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       auth: options.auth,
       storage: options.storage,
     });
+    registerExportRoutes(app, {
+      db: options.db,
+      auth: options.auth,
+    });
   }
   app.setErrorHandler((error, _request, reply) => {
     const mapped = toHttp(error);
@@ -142,6 +147,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         ...(mapped.id !== undefined ? { id: mapped.id } : {}),
         ...(mapped.blockers !== undefined
           ? { blockers: mapped.blockers }
+          : {}),
+        ...(mapped.problems !== undefined
+          ? { problems: mapped.problems }
           : {}),
       });
       return;

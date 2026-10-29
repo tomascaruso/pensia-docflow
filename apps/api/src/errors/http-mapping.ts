@@ -67,7 +67,14 @@ import {
   ExportEmptyError,
   ExportForbiddenError,
   ExportInvalidError,
+  ExportTooManyDocumentsError,
 } from "../db/export-service.js";
+import {
+  ExportGenerationFailedError,
+  ExportNotFoundError,
+  ExportTooLargeError,
+  InvalidExportFileError,
+} from "../services/export-orchestrator.js";
 import {
   PermissionConflictError,
   PermissionForbiddenError,
@@ -117,6 +124,12 @@ export interface HttpErrorBody {
       fieldKey: string | null;
     }>;
   };
+  /**
+   * Agregado en B6: problemas de una generación CSV rechazada con
+   * 409. Contenido D7-seguro: códigos y UUIDs de documentos, nunca
+   * contenido documental.
+   */
+  problems?: string[];
 }
 
 const NOT_FOUND: HttpErrorBody = {
@@ -292,6 +305,38 @@ export function toHttp(error: unknown): HttpErrorBody | null {
       status: 400,
       code: "invalid_request",
       message: "La solicitud no es válida.",
+    };
+  }
+  if (error instanceof ExportTooManyDocumentsError) {
+    return {
+      status: 400,
+      code: "export_too_many_documents",
+      message: "La exportación supera el máximo de documentos.",
+    };
+  }
+  if (error instanceof ExportGenerationFailedError) {
+    return {
+      status: 409,
+      code: "export_generation_failed",
+      message: "La exportación no puede generarse en su estado actual.",
+      problems: error.problems,
+    };
+  }
+  if (error instanceof ExportTooLargeError) {
+    return {
+      status: 413,
+      code: "export_too_large",
+      message: "El archivo generado supera el límite permitido.",
+    };
+  }
+  if (error instanceof ExportNotFoundError) {
+    return NOT_FOUND;
+  }
+  if (error instanceof InvalidExportFileError) {
+    return {
+      status: 400,
+      code: "invalid_request",
+      message: "El parámetro file debe ser main o lines.",
     };
   }
   if (error instanceof AuditWriterError) {
