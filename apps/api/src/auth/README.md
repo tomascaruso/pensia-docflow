@@ -618,8 +618,9 @@ ya existían.
 
 - **Q8 (`exception_accepted`) diferida a post-B6:** el flujo
   para aceptar un error como excepción sigue sin endpoint.
-- **A-02:** la re-verificación en generación sigue sin
-  cablear (B6).
+- **A-02:** la re-verificación en generación quedó cableada en
+  B6 (ver sección B6): `verifyExportForGeneration` +
+  `verifyExportCoherence` corren antes de generar cualquier byte.
 - **Cuarentena comprimida en `overridden`:** sin cambios (ver
   deudas de H3).
 - **Unique de par de candidatos sin mapear a error de
@@ -632,3 +633,117 @@ ya existían.
   nivel de servicio y se afirma en la integración.
 - **Servidor HTTP real no verificado:** como en B1, los tests
   usan Fastify inject.
+
+## B6 — Exportación CSV
+
+### Endpoints nuevos
+
+- **POST `/organizations/:orgId/exports`:** sesión 401 →
+  membresía 404 genérico → `requireRole` con permiso
+  `export_documents` (403 auditado como `export.create_denied`,
+  §5.1-7) → validación manual (`documentIds` arreglo de textos,
+  no vacío, sin duplicados) → `createExport` en una única
+  `db.transaction` con `maxDocuments: 100` → 201 con
+  `{ id, documentCount, status, createdAt }` (leído post-insert
+  en la misma tx). Errores: vacío/duplicados 400, sobre 100
+  documentos 400 `export_too_many_documents`, documento de otra
+  org o inexistente 404 genérico, no aprobado 422
+  `document_not_approved`.
+- **GET `/organizations/:orgId/exports/:exportId/csv?file=main|lines`:**
+  sesión 401 → membresía 404 genérico (sin `requireRole`:
+  cualquier miembro puede descargar; la restricción rige la
+  creación). `file` ausente → `main`; otro valor → 400.
+  Antes de generar: `verifyExportForGeneration` y
+  `verifyExportCoherence` (deuda A-02 cerrada); cualquier
+  problema → 409 `export_generation_failed` con `problems[]` y
+  auditoría `export.generation_failed`. CSV mayor a 5 MB → 413
+  `export_too_large`. Éxito → 200 con `Content-Type: text/csv;
+  charset=utf-8`, `Content-Disposition: attachment` y auditoría
+  `export.downloaded` con `{ export_id, file, row_count }`. La
+  descarga no muta `exports.status` (ver deudas).
+- **GET `/organizations/:orgId/exports`:** sesión 401 → membresía
+  404 genérico. Query `limit` (default 25, clamp a 100), `offset`
+  (default 0), `status` opcional (`pending`/`completed`/`failed`).
+  Respuesta `{ exports, total, limit, offset }`, orden
+  `createdAt` DESC.
+
+### Archivos
+
+- `services/csv-generator.ts` (puro, sin DB): `buildMainCsv` /
+  `buildLinesCsv`, escape de fórmulas con `'` solo en texto
+  (disparadores `=`, `+`, `-`, `@`, tab, CR; numéricos como
+  decimales planos validados, nunca escapados), entrecomillado
+  RFC 4180, BOM UTF-8, delimitador `;`, límite
+  `DEFAULT_CSV_MAX_BYTES = 5 MB` con `csvMaxBytes()` por env
+  `DOCFLOW_CSV_MAX_BYTES` (solo para tests).
+- `services/export-orchestrator.ts`: `generateExportCsv` +
+  `parseExportFile` + errores `ExportGenerationFailedError`
+  (409), `ExportTooLargeError` (413), `ExportNotFoundError`
+  (404 genérico), `InvalidExportFileError` (400).
+  `ExportTooManyDocumentsError` (400) vive en
+  `export-service.ts` (extensión aditiva: parámetro opcional
+  `maxDocuments`, sin el cual el comportamiento previo es
+  idéntico).
+- `db/export-csv-drizzle.ts`: `findExportDetails`,
+  `findExportsByOrg`, `findMainRows`, `findLineRows` (orden en JS
+  porque `export_items` no tiene orden; fail-closed ante filas
+  inválidas).
+- `routes/exports.ts` montado en `app.ts` tras
+  `documents-file`. `http-mapping.ts` mapea los cuatro errores
+  nuevos y `HttpErrorBody` suma `problems?: string[]` (espejo
+  de `blockers`); el handler de `app.ts` lo vuelca en el body.
+
+### Columnas
+
+- Principal: `id, supplier_name, supplier_tax_id,
+  invoice_number, issue_date, currency, total_amount,
+  approved_at, decided_by` (documentos resueltos +
+  `document_decisions`; importes NUMERIC como cadena tal cual,
+  fechas ISO, nulos → celda vacía).
+- Líneas: `document_id, line_number, description, quantity,
+  unit_price, line_total` (todo `extraction_lines`).
+- Nombres PD-09: `docflow-exportacion-<YYYY-MM-DD>-<8
+  primeros del UUID>.csv` y `-lineas.csv`; la fecha es
+  `createdAt` de la exportación (determinista entre
+  re-descargas). Re-descargar el mismo id es idempotente; un
+  POST nuevo con los mismos documentos crea un registro nuevo
+  (nunca sobrescribe).
+
+### Decisiones de B6 (resueltas por el orquestador)
+
+- Listar entra en B6. Máximo 100 documentos (400) y 5 MB (413)
+  como límites separados (conteo vs bytes). Delimitador `;` y
+  BOM (Excel es-AR). Re-verificación que falla bloquea la
+  descarga (409); por API es inalcanzable (approved no tiene
+  salidas, sin borrado PD-08) y solo ocurre por deriva directa
+  en base. Se auditan éxito y fallo. Generación síncrona (Q11).
+  `exports.status` no muta en B6. Id corto = 8 primeros del
+  UUID. `mainFileName`/`linesFileName` quedan NULL.
+
+### Deudas de B6
+
+- **Subtotal/impuestos fuera del CSV:** PRODUCT_SPEC §8 los
+  menciona, pero no hay campos fuente en el vocabulario de
+  `document_fields` (deuda de vocabulario, fuera de B6).
+- **`exports.status` no muta:** la descarga no escribe la fila
+  (solo la auditoría); marcar `completed`/`failed` +
+  `completedAt` + nombres de archivo queda para un flujo
+  asíncrono futuro.
+- **`mainFileName`/`linesFileName` NULL:** no hay archivos
+  persistidos que nombrar (el CSV se transmite desde base, sin
+  `StorageProvider`).
+- **Q8 (`exception_accepted`) diferida a post-B6:** sin cambios.
+- **Listado sin paginación SQL:** el fake no tiene
+  orderBy/offset/agregados, así que `findExportsByOrg` hace un
+  único fetch con tope `EXPORT_LIST_FETCH_CAP = 10000`, ordena
+  en JS y pagina con slice. Orgs con más de 10.000
+  exportaciones verían el listado truncado (fuera de escala
+  MVP); el arreglo futuro es paginación SQL cuando el fake lo
+  soporte.
+- **Cuarentena comprimida en `overridden`:** sin cambios (ver
+  deudas de H3).
+- **Unique de par de candidatos sin mapear a error de
+  dominio:** sin cambios (ver deudas de H3).
+- **Servidor HTTP real no verificado:** como en B1, los tests
+  usan Fastify inject.
+

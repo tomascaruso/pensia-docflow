@@ -101,6 +101,16 @@ export class ExportInvalidError extends ExportError {
   }
 }
 
+export class ExportTooManyDocumentsError extends ExportError {
+  constructor(limit: number, count: number) {
+    super(
+      "EXPORT_TOO_MANY_DOCUMENTS",
+      `la exportación incluye ${count} documentos y el máximo es ${limit}.`,
+    );
+    this.name = "ExportTooManyDocumentsError";
+  }
+}
+
 export interface ExportDocumentRecord {
   id: string;
   organizationId: string;
@@ -166,6 +176,11 @@ export interface CreateExportInput {
   organizationId: string;
   actorUserId: string;
   documentIds: string[];
+  /**
+   * Máximo de documentos, aditivo en B6 (límite de ruta: 100).
+   * Sin el parámetro, sin límite (comportamiento previo intacto).
+   */
+  maxDocuments?: number;
 }
 
 export interface CreateExportResult {
@@ -189,6 +204,18 @@ export async function createExport(
   }
   if (new Set(input.documentIds).size !== input.documentIds.length) {
     throw new ExportInvalidError();
+  }
+  // B6: límite de cantidad, después de vacío/duplicados y antes del
+  // bucle por documento. Con requireRole en la ruta, el orden
+  // observable es permiso → vacío → duplicados → límite → por doc.
+  if (
+    input.maxDocuments !== undefined &&
+    input.documentIds.length > input.maxDocuments
+  ) {
+    throw new ExportTooManyDocumentsError(
+      input.maxDocuments,
+      input.documentIds.length,
+    );
   }
   const permitted = await deps.permissions.hasExportPermission(
     input.organizationId,
