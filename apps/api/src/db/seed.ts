@@ -20,11 +20,16 @@
  * para que una segunda carga no duplique los fixtures. Es una estrategia
  * de inserción SIN actualización: una segunda carga no actualiza
  * fixtures modificados. Los documentos NO incluyen `total_cents`: es una
- * columna generada por la base.
+ * columna generada por la base. Excepción: los eventos de auditoría se
+ * escriben únicamente a través del escritor de M-03 (H3, Parte B), con
+ * verificación de existencia previa para no duplicar (el escritor no
+ * expone onConflictDoNothing); además se escriben después de
+ * exports/exportItems porque el resolvedor deriva la organización de
+ * la entidad referenciada.
  */
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import * as schema from "./schema.js";
 import { syntheticSeed } from "./seeds/synthetic.js";
 import {
@@ -32,6 +37,11 @@ import {
   assertSeedTarget,
 } from "./seed-guard.js";
 import { verifyLocalConnection } from "./verify-connection.js";
+import {
+  createDrizzleAuditEventStore,
+  createDrizzleAuditOrganizationResolver,
+  writeAuditEvent,
+} from "./audit-writer.js";
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
@@ -85,12 +95,50 @@ async function main(): Promise<void> {
       await tx.insert(schema.processingJobs).values(syntheticSeed.processingJobs).onConflictDoNothing();
       await tx.insert(schema.documentReviews).values(syntheticSeed.documentReviews).onConflictDoNothing();
       await tx.insert(schema.documentDecisions).values(syntheticSeed.documentDecisions).onConflictDoNothing();
-      await tx.insert(schema.auditEvents).values(syntheticSeed.auditEvents.map((e) => ({
-        ...e,
-        detailsJson: e.details,
-      }))).onConflictDoNothing();
       await tx.insert(schema.exports).values(syntheticSeed.exports).onConflictDoNothing();
       await tx.insert(schema.exportItems).values(syntheticSeed.exportItems).onConflictDoNothing();
+      // Auditoría (H3 M-03, Parte B): único camino vía el escritor, con
+      // adaptadores Drizzle sobre esta misma transacción. Se escribe
+      // DESPUÉS de exports/exportItems porque el resolvedor deriva la
+      // organización de la entidad y el evento export.completed
+      // referencia una exportación que debe existir en la transacción.
+      // Idempotencia: se consultan los ids ya presentes y solo se
+      // escriben los eventos ausentes (equivalente a onConflictDoNothing
+      // para el resto de las tablas). La org del fixture se pasa como
+      // expectedOrganizationId: si la derivación discrepara, el seed
+      // falla en voz alta en lugar de escribir un evento inconsistente.
+      const existingAuditIds = new Set(
+        (
+          await tx
+            .select({ id: schema.auditEvents.id })
+            .from(schema.auditEvents)
+            .where(
+              inArray(
+                schema.auditEvents.id,
+                syntheticSeed.auditEvents.map((e) => e.id),
+              ),
+            )
+        ).map((row) => row.id),
+      );
+      const auditStore = createDrizzleAuditEventStore(tx);
+      const auditResolver = createDrizzleAuditOrganizationResolver(tx);
+      for (const e of syntheticSeed.auditEvents) {
+        if (existingAuditIds.has(e.id)) {
+          continue;
+        }
+        await writeAuditEvent(
+          { resolver: auditResolver, store: auditStore },
+          {
+            id: e.id,
+            actorId: e.actorId,
+            action: e.action,
+            entityType: e.entityType,
+            entityId: e.entityId,
+            details: e.details,
+            expectedOrganizationId: e.organizationId,
+          },
+        );
+      }
     });
     console.log("seed: datos sintéticos cargados (sin duplicar existentes).");
   } finally {
