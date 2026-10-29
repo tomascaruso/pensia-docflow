@@ -501,7 +501,10 @@ validar → detectar duplicados B → transacción final →
 - **WORKER_ENABLED desactivado en tests:** los tests unitarios
   y de integración invocan `processNext`/`recoverStale`
   directamente, nunca el bucle de temporizador.
-- **D7 regex CUIT demasiado amplio:** matchea cualquier corrida
-  de 11 dígitos. Mitigado con exenciones SHA-256 y UUID. Fix
-  estructural (dígito verificador mod-11 + prefijo válido)
-  pendiente para orden posterior. Fuzzing de D7 recomendado.
+- **D7 regex CUIT: corregido estructuralmente con prefijo válido
+  + dígito verificador mod-11.** Un CUIT con dígito verificador
+  inválido o prefijo inválido no es rechazado por D7 (no es un
+  CUIT real; la validación de CUIT como dato de negocio
+  corresponde a las validaciones deterministas de B4). Fuzzing de
+  D7 con 1.000 valores aleatorios agregado en
+  audit-writer.test.ts.

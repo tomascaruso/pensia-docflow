@@ -15,6 +15,7 @@
  * `audit-writer.ts` (donde vive el adaptador Drizzle) y nadie
  * actualiza ni borra en esa tabla en ningún archivo.
  */
+import { randomBytes, randomUUID } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -25,6 +26,7 @@ import {
   AuditOrganizationMismatchError,
   AuditSensitiveDetailsError,
   AuditUnknownEntityError,
+  isValidCuit,
   writeAuditEvent,
   type AuditEventStore,
   type AuditOrganizationResolver,
@@ -460,12 +462,16 @@ describe("writeAuditEvent — exención UUID en el scan CUIT (D7, fix D7-UUID)",
   it("sigue rechazando por valor un invitation_id no-UUID que matchea CUIT", async () => {
     // La clave invitation_id no es sensible (no está en la denylist
     // de claves): el rechazo solo puede venir del scan de valores.
+    // Fix estructural D7: el valor debe ser un CUIT válido
+    // (20-12345678-6, dígito verificador mod-11 = 6); el valor viejo
+    // "20123456789" ya no se rechaza porque su dígito verificador
+    // es inválido (6 ≠ 9) y por lo tanto no es un CUIT real.
     const store = makeStore();
     const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
     await expect(
       writeAuditEvent(
         { resolver, store },
-        { ...baseInput, details: { invitation_id: "20123456789" } },
+        { ...baseInput, details: { invitation_id: "20123456786" } },
       ),
     ).rejects.toBeInstanceOf(AuditSensitiveDetailsError);
     expect(store.inserts).toHaveLength(0);
@@ -518,6 +524,175 @@ describe("writeAuditEvent — exención UUID en el scan CUIT (D7, fix D7-UUID)",
       },
     );
     expect(store.inserts).toHaveLength(1);
+  });
+});
+
+describe("writeAuditEvent — validación estructural de CUIT en D7 (fix estructural)", () => {
+  it("rechaza un CUIT válido con guiones (20-12345678-6)", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await expect(
+      writeAuditEvent(
+        { resolver, store },
+        { ...baseInput, details: { invitation_id: "20-12345678-6" } },
+      ),
+    ).rejects.toBeInstanceOf(AuditSensitiveDetailsError);
+    expect(store.inserts).toHaveLength(0);
+  });
+
+  it("rechaza un CUIT válido sin guiones (20123456786)", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await expect(
+      writeAuditEvent(
+        { resolver, store },
+        { ...baseInput, details: { invitation_id: "20123456786" } },
+      ),
+    ).rejects.toBeInstanceOf(AuditSensitiveDetailsError);
+    expect(store.inserts).toHaveLength(0);
+  });
+
+  it("acepta un CUIT con prefijo válido pero dígito verificador inválido (20-12345678-9)", async () => {
+    // Dígito verificador mod-11 correcto es 6, no 9: no es un CUIT
+    // real, así que D7 no lo rechaza (cambio de comportamiento
+    // esperado del fix estructural).
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    const record = await writeAuditEvent(
+      { resolver, store },
+      { ...baseInput, details: { invitation_id: "20-12345678-9" } },
+    );
+    expect(store.inserts).toHaveLength(1);
+    expect(record.detailsJson).toEqual({ invitation_id: "20-12345678-9" });
+  });
+
+  it("acepta un CUIT con prefijo inválido (99-12345678-6)", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await writeAuditEvent(
+      { resolver, store },
+      { ...baseInput, details: { invitation_id: "99-12345678-6" } },
+    );
+    expect(store.inserts).toHaveLength(1);
+  });
+
+  it("acepta un número de 11 dígitos que no parece CUIT (12345678901)", async () => {
+    // Prefijo 12 no está entre los válidos: no es un CUIT real.
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await writeAuditEvent(
+      { resolver, store },
+      { ...baseInput, details: { invitation_id: "12345678901" } },
+    );
+    expect(store.inserts).toHaveLength(1);
+  });
+
+  it("rechaza por nombre un campo cuit con un valor no-CUIT", async () => {
+    // El nombre de campo sigue disparando el rechazo aunque el
+    // valor no sea un CUIT válido: la clave es la que se rechaza.
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await expect(
+      writeAuditEvent(
+        { resolver, store },
+        { ...baseInput, details: { cuit: "no-es-un-cuit" } },
+      ),
+    ).rejects.toBeInstanceOf(AuditSensitiveDetailsError);
+    expect(store.inserts).toHaveLength(0);
+  });
+
+  it("rechaza un campo cuit con un valor CUIT válido", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    await expect(
+      writeAuditEvent(
+        { resolver, store },
+        { ...baseInput, details: { cuit: "20-12345678-6" } },
+      ),
+    ).rejects.toBeInstanceOf(AuditSensitiveDetailsError);
+    expect(store.inserts).toHaveLength(0);
+  });
+});
+
+describe("writeAuditEvent — fuzzing D7 (fix estructural)", () => {
+  // 1.000 valores aleatorios en 5 formas. Criterio: 0 FALSOS
+  // positivos. Un valor que ES un CUIT estructuralmente válido y
+  // se rechaza es un verdadero positivo (rechazo correcto), no un
+  // fallo: sin esa distinción, los strings numéricos de 11 dígitos
+  // harían flaky el test (~0,7% de ser CUIT válido cada uno, ~18
+  // strings de 11 dígitos por corrida). Los verdaderos positivos
+  // se cuentan aparte y no hacen fallar el test.
+  const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+  function randomUlid(): string {
+    const bytes = randomBytes(26);
+    let out = "";
+    for (const byte of bytes) {
+      out += CROCKFORD[byte % CROCKFORD.length];
+    }
+    return out;
+  }
+
+  function randomNumericString(): string {
+    const length = 10 + Math.floor(Math.random() * 11);
+    const bytes = randomBytes(length);
+    let out = "";
+    for (const byte of bytes) {
+      out += String(byte % 10);
+    }
+    return out;
+  }
+
+  it("acepta 1.000 valores aleatorios sin falsos positivos", async () => {
+    const store = makeStore();
+    const resolver = makeResolver({ [`documents:${DOC_A}`]: ORG_A });
+    const values: string[] = [];
+    for (let i = 0; i < 200; i++) {
+      values.push(randomBytes(32).toString("hex"));
+    }
+    for (let i = 0; i < 200; i++) {
+      values.push(randomUUID());
+    }
+    for (let i = 0; i < 200; i++) {
+      values.push(randomUlid());
+    }
+    for (let i = 0; i < 200; i++) {
+      values.push(randomBytes(15 + Math.floor(Math.random() * 16)).toString("base64"));
+    }
+    for (let i = 0; i < 200; i++) {
+      values.push(randomNumericString());
+    }
+    expect(values).toHaveLength(1000);
+
+    const start = Date.now();
+    let accepted = 0;
+    let truePositives = 0;
+    const falsePositives: string[] = [];
+    for (const value of values) {
+      try {
+        await writeAuditEvent(
+          { resolver, store },
+          { ...baseInput, details: { fuzz_value: value } },
+        );
+        accepted += 1;
+      } catch (error) {
+        if (
+          error instanceof AuditSensitiveDetailsError &&
+          isValidCuit(value)
+        ) {
+          truePositives += 1;
+        } else {
+          falsePositives.push(value);
+        }
+      }
+    }
+    const durationMs = Date.now() - start;
+    console.log(
+      `fuzzing D7: 1000 valores, ${accepted} aceptados, ` +
+        `${truePositives} verdaderos positivos (CUIT válido), ` +
+        `${falsePositives.length} falsos positivos, ${durationMs} ms`,
+    );
+    expect(falsePositives).toEqual([]);
   });
 });
 
