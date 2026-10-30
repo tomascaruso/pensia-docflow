@@ -21,6 +21,7 @@ import type {
   FastifyRequest,
 } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { DecisionResponse } from "@pensia-docflow/shared";
 import type { AuthSessionPort } from "../auth/session.js";
 import { getSession } from "../auth/session.js";
 import {
@@ -212,7 +213,7 @@ export function registerDecisionRoutes(
             ? { decidedAt: result.decidedAt }
             : {}),
         },
-      });
+      } satisfies DecisionResponse);
     },
   );
 }

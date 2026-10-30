@@ -19,6 +19,12 @@ import type {
   FastifyRequest,
 } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type {
+  InvitationCreateResponse,
+  InvitationStatus,
+  InvitationsResponse,
+  OrganizationInvitationsResponse,
+} from "@pensia-docflow/shared";
 import {
   createDrizzleAuditEventStore,
   createDrizzleAuditOrganizationResolver,
@@ -142,9 +148,9 @@ export function registerInvitationRoutes(
       return reply.code(201).send({
         id: result.id,
         email: result.email,
-        status: result.status,
+        status: result.status as InvitationStatus,
         expiresAt: result.expiresAt.toISOString(),
-      });
+      } satisfies InvitationCreateResponse);
     },
   );
 
@@ -231,11 +237,11 @@ export function registerInvitationRoutes(
         invitations: invitations.map((invitation) => ({
           id: invitation.id,
           email: invitation.email,
-          status: invitation.status,
+          status: invitation.status as InvitationStatus,
           expiresAt: invitation.expiresAt.toISOString(),
           createdAt: invitation.createdAt.toISOString(),
         })),
-      });
+      } satisfies OrganizationInvitationsResponse);
     },
   );
 
@@ -259,12 +265,12 @@ export function registerInvitationRoutes(
           organizationId: invitation.organizationId,
           organizationName: invitation.organizationName,
           email: invitation.email,
-          status: invitation.status,
+          status: invitation.status as InvitationStatus,
           expiresAt: invitation.expiresAt.toISOString(),
           createdAt: invitation.createdAt.toISOString(),
           inviterId: invitation.inviterId,
         })),
-      });
+      } satisfies InvitationsResponse);
     },
   );
 }

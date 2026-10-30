@@ -1,10 +1,38 @@
-import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
 import App from "./App";
 
-describe("App (scaffold H0)", () => {
-  it("renderiza el marcador de scaffold, sin funcionalidad de negocio", () => {
-    const html = renderToStaticMarkup(<App />);
-    expect(html).toContain("Scaffold H0");
+/**
+ * Test de humo (F1, sub-paso 9a): la app levanta, resuelve una ruta y no
+ * emite errores de consola. El layout completo se prueba en
+ * AppLayout.test.tsx; aquí solo se verifica el arranque y el routing.
+ */
+describe("App (humo F1)", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    window.history.pushState({}, "", "/login");
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("renderiza la ruta /login sin errores de consola", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<App />);
+    expect(
+      screen.getByRole("heading", { name: "Acceso" }),
+    ).toBeInTheDocument();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("una ruta desconocida muestra No encontrado", () => {
+    window.history.pushState({}, "", "/ruta-que-no-existe");
+    render(<App />);
+    expect(
+      screen.getByRole("heading", { name: "No encontrado" }),
+    ).toBeInTheDocument();
   });
 });

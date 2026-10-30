@@ -38,6 +38,11 @@ import {
   type DecisionDocumentRepository,
   type DecisionServiceDeps,
 } from "../db/decision-service.js";
+import type {
+  DecideDocumentRequest,
+  DocumentStatus,
+  FieldKey,
+} from "@pensia-docflow/shared";
 import { StateTransitionForbiddenError } from "../db/state-machine.js";
 import type { PendingCandidateView } from "../db/duplicate-candidate-service.js";
 import type { ValidationRow } from "./validation-service.js";
@@ -107,10 +112,8 @@ export const FIELD_KEYS: readonly string[] = [
   "total_amount",
 ];
 
-export interface ValidatedCorrection {
-  fieldKey: string;
-  correctedValue: string;
-}
+export type ValidatedCorrection =
+  NonNullable<DecideDocumentRequest["corrections"]>[number];
 
 function isRealDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -176,7 +179,7 @@ export function validateCorrections(
         "la moneda corregida debe ser un código ISO de 3 letras mayúsculas.",
       );
     }
-    out.push({ fieldKey, correctedValue: value });
+    out.push({ fieldKey: fieldKey as FieldKey, correctedValue: value });
   }
   return out;
 }
@@ -217,7 +220,7 @@ export interface DecideWithOrchestrationInput {
 
 export interface DecideWithOrchestrationResult {
   documentId: string;
-  status: string;
+  status: DocumentStatus;
   decisionId: string;
   decidedAt?: string;
 }

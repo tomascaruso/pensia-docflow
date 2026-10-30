@@ -14,6 +14,7 @@ import type {
   FastifyRequest,
 } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { AuditListResponse } from "@pensia-docflow/shared";
 import type { AuthSessionPort } from "../auth/session.js";
 import { getSession } from "../auth/session.js";
 import {
@@ -199,7 +200,7 @@ export function registerAuditEventRoutes(
         total,
         limit: parsed.limit,
         offset: parsed.offset,
-      });
+      } satisfies AuditListResponse);
     },
   );
 }

@@ -17,6 +17,7 @@
     "db:verify": "tsx src/db/check-destination.ts && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f scripts/verify-h2.sql"
   },
   "dependencies": {
+    "@pensia-docflow/shared": "*",
     "@better-auth/drizzle-adapter": "1.7.14",
     "@fastify/cors": "11.3.1",
     "@fastify/multipart": "9.4.0",

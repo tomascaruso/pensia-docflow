@@ -14,6 +14,10 @@ import type {
   FastifyRequest,
 } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type {
+  DocumentDetailResponse,
+  DocumentListResponse,
+} from "@pensia-docflow/shared";
 import type { AuthSessionPort } from "../auth/session.js";
 import { getSession } from "../auth/session.js";
 import {
@@ -173,7 +177,7 @@ export function registerDocumentsReadRoutes(
         total,
         limit: parsed.limit,
         offset: parsed.offset,
-      });
+      } satisfies DocumentListResponse);
     },
   );
 
@@ -202,7 +206,7 @@ export function registerDocumentsReadRoutes(
         candidates: detail.candidates.map((row) => serializeCandidate(row)),
         decisions: detail.decisions.map((row) => serializeDecision(row)),
         jobs: detail.jobs.map((row) => serializeJob(row)),
-      });
+      } satisfies DocumentDetailResponse);
     },
   );
 }

@@ -22,6 +22,11 @@ import type {
   FastifyRequest,
 } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type {
+  Grant,
+  GrantRevokeResponse,
+  GrantsResponse,
+} from "@pensia-docflow/shared";
 import {
   createDrizzleAuditEventStore,
   createDrizzleAuditOrganizationResolver,
@@ -152,7 +157,7 @@ export function registerGrantRoutes(
         permissionKey: grant.permissionKey,
         grantedBy: grant.grantedBy,
         grantedAt: grant.grantedAt.toISOString(),
-      });
+      } satisfies Grant);
     },
   );
 
@@ -191,7 +196,7 @@ export function registerGrantRoutes(
         permissionKey: revoked.permissionKey,
         revokedBy: revoked.revokedBy,
         revokedAt: revoked.revokedAt?.toISOString() ?? null,
-      });
+      } satisfies GrantRevokeResponse);
     },
   );
 
@@ -209,11 +214,11 @@ export function registerGrantRoutes(
         grants: grants.map((grant) => ({
           id: grant.id,
           userId: grant.userId,
-          permissionKey: grant.permissionKey,
+          permissionKey: grant.permissionKey as PermissionKey,
           grantedBy: grant.grantedBy,
           grantedAt: grant.grantedAt.toISOString(),
         })),
-      });
+      } satisfies GrantsResponse);
     },
   );
 }

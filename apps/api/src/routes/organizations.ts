@@ -41,6 +41,12 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type {
+  MemberRole,
+  OrganizationCreateResponse,
+  OrganizationDetailResponse,
+  OrganizationsResponse,
+} from "@pensia-docflow/shared";
 import type { AuthSessionPort } from "../auth/session.js";
 import * as schema from "../db/schema.js";
 import * as authTables from "../auth/tables.js";
@@ -279,7 +285,7 @@ export function registerOrganizationRoutes(
         name: result.name,
         createdAt: result.createdAt.toISOString(),
         membership: { userId: user.id, role: "org_admin" },
-      });
+      } satisfies OrganizationCreateResponse);
     },
   );
 
@@ -329,7 +335,7 @@ export function registerOrganizationRoutes(
       return reply.code(200).send({
         ...serializeOrganization(org),
         membership: { role: role ?? null },
-      });
+      } satisfies OrganizationDetailResponse);
     },
   );
 
@@ -345,7 +351,12 @@ export function registerOrganizationRoutes(
         });
       }
       const organizations = await listOrganizationsOfUser(deps.db, user.id);
-      return reply.code(200).send({ organizations });
+      return reply.code(200).send({
+        organizations: organizations.map((o) => ({
+          ...o,
+          role: o.role as MemberRole,
+        })),
+      } satisfies OrganizationsResponse);
     },
   );
 }

@@ -14,6 +14,30 @@
  */
 import { and, eq } from "drizzle-orm";
 import * as schema from "./schema.js";
+import type {
+  AuditEvent,
+  CandidateKind,
+  CandidateStatus,
+  DecisionValue,
+  Document,
+  DocumentDecision,
+  DocumentField,
+  DocumentStatus,
+  DuplicateCandidate,
+  FieldKey,
+  JobStatus,
+  LineItem,
+  Organization,
+  ProcessingJob,
+  Severity,
+  SummaryResponse,
+  Validation,
+} from "@pensia-docflow/shared";
+import { DOCUMENT_STATUSES } from "@pensia-docflow/shared";
+
+// Los casts de literales reflejan CHECKs de la base o el contrato del
+// escritor; son solo de compilación y no cambian valores en ejecución.
+export { DOCUMENT_STATUSES };
 
 const FETCH_LIMIT = 10000;
 
@@ -192,14 +216,14 @@ function mapDocumentRow(row: Row): DocumentRow | null {
   };
 }
 
-export function serializeDocument(row: DocumentRow): Record<string, unknown> {
+export function serializeDocument(row: DocumentRow): Document {
   return {
     id: row.id,
     fileName: row.fileName,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     pageCount: row.pageCount,
-    status: row.status,
+    status: row.status as DocumentStatus,
     supplierName: row.supplierName,
     supplierTaxId: row.supplierTaxId,
     invoiceNumber: row.invoiceNumber,
@@ -309,9 +333,9 @@ function mapFieldRow(row: Row): FieldRow | null {
   };
 }
 
-export function serializeField(row: FieldRow): Record<string, unknown> {
+export function serializeField(row: FieldRow): DocumentField {
   return {
-    fieldKey: row.fieldKey,
+    fieldKey: row.fieldKey as FieldKey,
     extractedValue: row.extractedValue,
     normalizedValue: row.normalizedValue,
     correctedValue: row.correctedValue,
@@ -354,7 +378,7 @@ function mapLineRow(row: Row): LineRow | null {
   };
 }
 
-export function serializeLine(row: LineRow): Record<string, unknown> {
+export function serializeLine(row: LineRow): LineItem {
   return {
     lineNumber: row.lineNumber,
     description: row.description,
@@ -411,13 +435,13 @@ function mapValidationRow(row: Row): ValidationRow | null {
   };
 }
 
-export function serializeValidation(row: ValidationRow): Record<string, unknown> {
+export function serializeValidation(row: ValidationRow): Validation {
   return {
     ruleCode: row.ruleCode,
-    severity: row.severity,
+    severity: row.severity as Severity,
     message: row.message,
     fieldKey: row.fieldKey,
-    status: row.status,
+    status: row.status as Validation["status"],
     exceptionJustification: row.exceptionJustification,
     exceptionAcceptedBy: row.exceptionAcceptedBy,
     exceptionAcceptedAt: toIsoOrNull(row.exceptionAcceptedAt),
@@ -486,15 +510,15 @@ function mapCandidateRow(row: Row): CandidateRow | null {
   };
 }
 
-export function serializeCandidate(row: CandidateRow): Record<string, unknown> {
+export function serializeCandidate(row: CandidateRow): DuplicateCandidate {
   return {
     id: row.id,
     documentId: row.documentId,
     candidateDocumentId: row.candidateDocumentId,
-    kind: row.kind,
+    kind: row.kind as CandidateKind,
     reasonCode: row.reasonCode,
     matchedFieldsJson: row.matchedFieldsJson,
-    status: row.status,
+    status: row.status as CandidateStatus,
     resolvedBy: row.resolvedBy,
     resolvedAt: toIsoOrNull(row.resolvedAt),
     justification: row.justification,
@@ -534,11 +558,11 @@ function mapDecisionRow(row: Row): DecisionRow | null {
   };
 }
 
-export function serializeDecision(row: DecisionRow): Record<string, unknown> {
+export function serializeDecision(row: DecisionRow): DocumentDecision {
   return {
     id: row.id,
     decidedBy: row.decidedBy,
-    decision: row.decision,
+    decision: row.decision as DecisionValue,
     justification: row.justification,
     decidedAt: toIsoOrNull(row.decidedAt),
   };
@@ -599,11 +623,11 @@ function mapJobRow(row: Row): JobRow | null {
   };
 }
 
-export function serializeJob(row: JobRow): Record<string, unknown> {
+export function serializeJob(row: JobRow): ProcessingJob {
   return {
     id: row.id,
-    jobType: row.jobType,
-    status: row.status,
+    jobType: row.jobType as "extraction",
+    status: row.status as JobStatus,
     attempts: row.attempts,
     maxAttempts: row.maxAttempts,
     lastError: row.lastError,
@@ -838,7 +862,7 @@ function mapAuditRow(row: Row): AuditRow | null {
   };
 }
 
-export function serializeAuditEvent(row: AuditRow): Record<string, unknown> {
+export function serializeAuditEvent(row: AuditRow): AuditEvent {
   return {
     id: row.id,
     actorId: row.actorId,
@@ -939,7 +963,7 @@ export async function findOrganizationById(
   return { id, name, createdAt: asDateOrNull(row["createdAt"]) };
 }
 
-export function serializeOrganization(row: OrganizationRow): Record<string, unknown> {
+export function serializeOrganization(row: OrganizationRow): Organization {
   return {
     id: row.id,
     name: row.name,
@@ -982,31 +1006,13 @@ export async function listOrganizationsOfUser(
   return out;
 }
 
-export interface Summary {
-  counts: Record<string, number>;
-  attention: Array<Record<string, unknown>>;
-  errors: {
-    failed: Array<{ id: string; reason: string | null }>;
-    blocked: Array<{ id: string; reason: string | null }>;
-  };
-  recentActivity: Array<Record<string, unknown>>;
-}
-
-export const DOCUMENT_STATUSES = [
-  "uploaded",
-  "queued",
-  "processing",
-  "needs_review",
-  "approved",
-  "rejected",
-  "failed",
-  "blocked",
-] as const;
+/** Alias histórico: el resumen del frontend es SummaryResponse. */
+export type Summary = SummaryResponse;
 
 export async function summaryOfOrg(
   client: ReadDrizzleClient,
   organizationId: string,
-): Promise<Summary> {
+): Promise<SummaryResponse> {
   const rows = await client
     .select(DOCUMENT_FIELDS)
     .from(schema.documents)
@@ -1029,7 +1035,7 @@ export async function summaryOfOrg(
     .map((doc) => ({
       id: doc.id,
       fileName: doc.fileName,
-      status: doc.status,
+      status: doc.status as DocumentStatus,
       supplierName: doc.supplierName,
       invoiceNumber: doc.invoiceNumber,
       totalAmount: doc.totalAmount,
