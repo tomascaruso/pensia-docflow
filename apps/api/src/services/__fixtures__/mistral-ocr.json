@@ -1,0 +1,1 @@
+{"model":"mistral-ocr-latest","pages":[{"index":0,"markdown":"FACTURA (documento sintético de evaluación)\n\nProveedor: Proveedor Ficticio Uno S.A.\nCUIT: 30-12345678-9\nNúmero: 0001-00001234\nFecha: 2026-02-10\nMoneda: ARS\n\nDetalle:\n1. Servicio A x 1 @ 100000.00 = 100000.00\n2. Servicio B x 1 @ 21000.00 = 21000.00\n\nTotal: 121000.00"}]}

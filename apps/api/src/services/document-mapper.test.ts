@@ -154,3 +154,46 @@ describe("document-mapper", () => {
     expect(mapped.resolved.issueDate).toBeNull();
   });
 });
+
+describe("document-mapper B7c: decimales con coma", () => {
+  it("total y líneas con coma/miles ya no fallan y normalizan a punto", () => {
+    const mapped = mapExtraction(
+      extraction({
+        fields: [
+          { key: "supplier_name", rawValue: "Librería Austral S.A.", confidence: 1, page: 1, boundingBox: null },
+          { key: "supplier_tax_id", rawValue: "30-67890123-4", confidence: 1, page: 1, boundingBox: null },
+          { key: "invoice_number", rawValue: "0001-00009494", confidence: 1, page: 1, boundingBox: null },
+          { key: "issue_date", rawValue: "2026-02-28", confidence: 1, page: 1, boundingBox: null },
+          { key: "currency", rawValue: "MXN", confidence: 1, page: 1, boundingBox: null },
+          { key: "total_amount", rawValue: "121.000,50", confidence: 1, page: 1, boundingBox: null },
+        ],
+        lineItems: [
+          { description: "Libros", quantity: "50", unitPrice: "2.420,01", lineTotal: "121.000,50" },
+        ],
+      }),
+      "openai",
+    );
+    const byKey = new Map(mapped.fields.map((f) => [f.fieldKey, f]));
+    expect(byKey.get("total_amount")?.normalizedValue).toBe("12100050");
+    expect(mapped.lines[0]).toMatchObject({
+      unitPrice: "2420.01",
+      lineTotal: "121000.50",
+    });
+    expect(mapped.businessKey).toBe(
+      "librería austral sa|30678901234|000100009494|12100050|MXN|2026-02-28",
+    );
+  });
+
+  it("línea con decimal inválido sigue siendo MappingError", () => {
+    expect(() =>
+      mapExtraction(
+        extraction({
+          lineItems: [
+            { description: "X", quantity: "1", unitPrice: "12,34,56", lineTotal: "1" },
+          ],
+        }),
+        "openai",
+      ),
+    ).toThrow(/no es un decimal válido/);
+  });
+});

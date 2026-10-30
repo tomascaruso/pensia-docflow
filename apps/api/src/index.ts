@@ -17,7 +17,7 @@
 import { buildApp } from "./app.js";
 import { auth, db, pool } from "./auth/instance.js";
 import { createLocalStorage } from "./services/storage-local.js";
-import { createExtractionProviderFromEnv } from "./services/extraction-stub.js";
+import { createExtractionProviderFromEnv } from "./services/extraction-registry.js";
 import { validateDocument } from "./services/validation-service.js";
 import { detectDuplicates } from "./services/duplicate-detection-b.js";
 import { createWorkerDeps } from "./worker/job-drizzle.js";
@@ -62,9 +62,9 @@ if (workerEnabled) {
     throw new Error("Variables de worker inválidas.");
   }
   const storage = createLocalStorage();
-  const extractor = createExtractionProviderFromEnv((key) =>
-    storage.get({ key }),
-  );
+  const extractor = createExtractionProviderFromEnv({
+    readFile: (key) => storage.get({ key }),
+  });
   const deps = createWorkerDeps(db, {
     storage,
     extractor,

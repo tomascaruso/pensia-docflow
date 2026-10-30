@@ -747,3 +747,160 @@ ya existían.
 - **Servidor HTTP real no verificado:** como en B1, los tests
   usan Fastify inject.
 
+
+## B7a — Harness de evaluación de proveedores (sin gasto)
+
+B7a construye la maquinaria de evaluación y corre Tesseract ($0).
+La evaluación paga (Azure, Google, AWS, Mistral) es la Orden 071b,
+con confirmación de gasto separada. Sin migración.
+
+### Qué se implementó
+
+- **Dataset sintético (60 documentos, 68 páginas):**
+  `apps/api/scripts/datasets/generate.ts` genera los PDFs con
+  pdf-lib y `ground-truth.json` (id, categoría, páginas, 6 campos,
+  líneas, duplicado si aplica). Composición: 14 limpios, 6 con
+  campos faltantes, 6 con diferencias en importes (4 con 3-4
+  decimales), 8 con impuestos/monedas, 4 exactos, 4 probables,
+  4 escaneos simulados (degradación vectorial: rotación, bajo
+  contraste, ruido; se rasterizan con pdftoppm), 2 ambiguos y
+  12 casos DUP (F01–F04, B01–B04, P01, N01–N03). 6 multi-página,
+  60 con líneas. Los F son copias byte-idénticas de su fuente.
+  Test de validación: `scripts/datasets/ground-truth.test.ts`.
+- **Métricas (`scripts/metrics.ts`):** exactitud por campo
+  (exacta y tolerante 0,01 con aritmética decimal exacta, sin
+  float), líneas, recall/precisión de duplicados (esperados =
+  reglas de PRODUCT_SPEC §7.2/7.3 sobre la verdad; encontrados =
+  mismas reglas sobre la extracción), tasa de revisión, fallos
+  por causa, latencia p50/p95, costo. Tests con valores a mano:
+  `scripts/metrics.test.ts`.
+- **Proveedores (`src/services/`):** `extraction-tesseract.ts`
+  (binario del sistema + pdftoppm, parser determinista
+  `invoice-text-parser.ts`), `extraction-azure.ts`,
+  `extraction-google.ts`, `extraction-aws.ts`,
+  `extraction-mistral.ts` (solo estructura + traducción de
+  respuesta; analyze() lanza "no implementado en 071a").
+  Contract tests con fixtures JSON guardadas en
+  `src/services/__fixtures__/` (estructura real, valores
+  inventados): `extraction-providers.test.ts`.
+- **Registry (`extraction-registry.ts`):** la fábrica
+  `createExtractionProviderFromEnv` se movió desde el stub.
+  Selección por `EXTRACTION_PROVIDER` (stub|azure|google|aws|
+  mistral|tesseract). Desconocido o pago sin credenciales →
+  fallo rápido, nunca fallback silencioso. El stub sigue
+  siendo el default y el fallback de tests/dev.
+- **Wiring:** `index.ts` y `worker-entry.ts` importan del
+  registry. `job-processor.ts` no cambió: ya recibía el
+  proveedor por `deps.extractor`. El test del stub se migró
+  al nuevo contrato (azure sin credenciales ya no es
+  "desconocido", es "sin credenciales").
+- **Harness (`scripts/evaluate-providers.ts`):** flags
+  `--provider`, `--dataset`, `--dry-run`, `--execute`,
+  `--confirm-spend`, `--report`, `--spend`. Un proveedor pago
+  exige `--execute` + `--confirm-spend`; sin ambos, dry-run
+  sin llamadas. Topes por corrida: gasto ≤ USD 9, 2 intentos
+  por documento (solo reintenta timeout, rate limit y 5xx),
+  páginas ≤ páginas del dataset. Genera
+  `docs/evaluation-report-<proveedor>.md` y
+  `scripts/datasets/spend-<proveedor>.json`.
+  `reviewNeeded` = procesado con éxito: en el pipeline real
+  todo documento procesado va a `needs_review`, así que la
+  tasa de revisión refleja los fallos, no la calidad de
+  extracción.
+
+### Tesseract: decisión binario del sistema vs tesseract.js
+
+Se eligió el binario del sistema (`tesseract-ocr` +
+`tesseract-ocr-spa`, 5.3.4, con `pdftoppm` ya instalado):
+evita el runtime WASM y no agrega dependencias npm. Si una
+imagen futura de VM lo pierde, reinstalar con
+`apt-get install -y tesseract-ocr tesseract-ocr-spa`.
+El proveedor usa TSV (`--psm 6`, `spa+eng`): confianza por
+campo = media de las palabras de su línea; página = página
+de la línea; `boundingBox` en null (no se persiste, deuda H1).
+
+### Deudas de B7a
+
+- **Evaluación paga pendiente (Orden 071b):** Azure, Google,
+  AWS y Mistral solo tienen estructura + traducción. La
+  elección de proveedor está pendiente de esa corrida.
+- **Precios a re-verificar en 071b:** las estimaciones del
+  harness son referencias del plan B7 (oct-2026), no
+  cotizaciones; Google tiene lecturas contradictorias
+  ($0,10/doc vs $10/1000 págs).
+- **Capa de extracción de campos de Mistral:** la vía
+  markdown usa el parser compartido, pero su precisión no
+  está medida; las anotaciones de Document AI no se
+  evaluaron.
+- **Q8 (`exception_accepted`) diferida a post-B7:** sin cambios.
+- **Dataset sintético:** no prueba generalización a
+  documentos reales; los "escaneos" son degradación
+  vectorial rasterizada, no salida de escáner.
+- **Publicación futura de los 60 PDFs:** son binarios y
+  `github push-files` los rechaza; al publicar B7a habrá
+  que seguir el procedimiento de binarios (snapshot de
+  texto primero, binarios por web UI, verificar, registrar
+  ambos commits).
+- **Servidor HTTP real no verificado:** como en B1, los tests
+  usan Fastify inject.
+
+## B7b — OpenAI GPT-4o mini como proveedor de producción
+
+Decisión del orquestador: solo OpenAI GPT-4o mini como
+proveedor de extracción de producción. SDK `openai` 7.45.1
+(exacto, sin `^`) en `apps/api/package.json`.
+
+- **Implementación:** `extraction-openai.ts` — rasterización
+  con pdftoppm (módulo compartido `pdf-raster.ts`, extraído
+  de Tesseract), una llamada por página con Structured Output
+  (`response_format` json_schema estricto: 6 campos + líneas
+  + confianza por campo), consolidación primer no-null por
+  campo y líneas concatenadas. Costo real acumulado desde el
+  `usage` de la API ($0.15/1M entrada, $0.60/1M salida,
+  verificados 29-oct-2026); el harness usa ese costo, no una
+  estimación.
+- **Credencial:** nunca en el repo. Orden: `OPENAI_API_KEY`
+  del entorno, si no, surrogate del conector `custom.openai`
+  vía authd (`openai-surrogate.ts`, solo en memoria). Sin
+  ninguna de las dos → fallo rápido en arranque. El registry
+  acepta `openai` (`OPENAI_MODEL`, default `gpt-4o-mini`).
+- **Harness:** `--limit=N` (humo), `--max-spend` (tope duro,
+  default USD 9; la orden B7b usa USD 1), costo real del
+  proveedor cuando expone `getUsageCostUsd()`. Pago exige
+  `--execute` + `--confirm-spend` (la orden B7b autoriza
+  hasta USD 1, así que ambos flags juntos son esa
+  confirmación).
+- **Costo estimado:** ~USD 0.02 para los 60 documentos
+  (orden B7b); el gasto real queda en
+  `scripts/datasets/spend-openai.json` y el informe en
+  `docs/evaluation-report-openai.md`.
+- **Riesgo vigente:** OpenAI anunció el 14-oct-2026 el fin
+  de la API de `gpt-4o-mini` el 14-ene-2027 (reemplazo
+  sugerido: `gpt-6-luna`). Implementado como se ordenó,
+  pero el proveedor de producción tiene fecha de expiración:
+  antes de esa fecha habrá que migrar el modelo default o
+  re-evaluar.
+- **Deudas que siguen:** evaluación de Azure/Google/AWS/
+  Mistral diferida (estructuras sin ejecutar), capa de
+  extracción de campos de Mistral sin probar, Tesseract
+  como fallback local ($0).
+
+## B7c — Refinamiento de OpenAI GPT-4o mini (temperature 0, prompt estricto, normalizador decimal, filtro de líneas)
+
+Refinamiento ordenado tras B7b (v1: campos 96,3%, líneas 16,7%, duplicados exactos recall 100% / precisión 91,7%, 2 fallos por comas). Sin cambio de proveedor, sin dependencias nuevas, sin cambios de esquema.
+
+Cambios:
+- `extraction-openai.ts`: `temperature: 0` fijo en la llamada; prompt del sistema con cuatro reglas (no inventar/completar, descripción de línea solo el ítem, sin renglones de relleno, punto decimal nunca coma); `createSdkChatDeps` exportado para testear los parámetros reales de la llamada; filtro conservador `filterLineItems`/`isFillerLineItem` aplicado tras consolidar (vacías/null, `Item N x M @ precio`, `N x M @ precio`, prefijos total/subtotal/iva con borde de espacio o dos puntos).
+- `decimal-normalizer.ts` (nuevo) + cableado en `document-mapper.ts`: `normalizeDecimal` antes de validar líneas y antes de `totalCentsFromAmount` (total y clave de negocio). Un único separador siempre es decimal (contrato del mapper ≤4 lugares; coma decimal por locale española). La columna resuelta `totalAmount` sigue guardando la forma original (contrato B4).
+- Evaluación refinada final (v3): 60/60 procesados, 0 fallos, campos 97,2% (350/360), líneas 71,3% (164/230), duplicados exactos recall 0,970 / precisión 0,941, latencia p95 9,9 s, costo USD 0,3876. Informes: `docs/evaluation-report-openai.md` (vivo) y `docs/evaluation-report-openai-v2.md` (copia idéntica del refinado).
+- Incidente honesto de la corrida intermedia (v2): la primera versión del normalizador rechazaba un único separador con 3 dígitos detrás como "ambiguo" y rompió ds-amounts-03/05 (3 decimales legítimos, `4115.226`), que en v1 pasaban. Se corrigió la regla y se re-corrió completo (v3). Gasto total de la orden ≈ USD 0,79 (v2 0,3876 + v3 0,3876 + diagnósticos ~0,012), bajo el tope de USD 1.
+- Precisión 94,1% (no el >95% pedido): 2 FP estables con temperature 0 — clean-10<>prob-04 (el modelo lee el CUIT con un 9 insertado en ambos y completa el total de prob-04) y f04<>missing-05 (total alucinado en missing-05, idéntico en su copia f04) — más 1 FN (clean-10<>n03, mismo error de CUIT). La decisión de cierre queda en el orquestador.
+- Deudas que quedan: relleno de páginas de continuación en multi-página (clean 70,7%, tax 62,4%, dup 65,4% en líneas); alucinación residual de totales faltantes; temperature 0 reduce la varianza pero no garantiza determinismo total en la API; resolved.totalAmount crudo con coma seguiría fallando el insert NUMERIC en producción (el mapper lo tolera, el worker no lo normaliza); gpt-4o-mini cierra su API el 14-ene-2027.
+
+## B7d — Fix de resolved.totalAmount con coma decimal en el worker
+
+Bug residual de B7c: el mapper normalizaba el total para centavos y clave de negocio, pero `resolved.totalAmount` guardaba la forma original; un total con coma ("121.000,50") rompería el insert NUMERIC(19,4) en producción (el harness no lo detecta porque no inserta en `documents`).
+
+Fix: `normalizeResolvedTotal` en `job-processor.ts`, aplicado tras `mapExtraction` y antes de la tx final. Null se conserva (campo faltante); formato inválido → MappingError (fallo del job por el camino existente, `mapping_error`), nunca NULL silencioso ni crudo inválido — misma política que los decimales de línea inválidos. Las líneas ya venían normalizadas por el mapper (B7c, `asDecimalString`); verificado: ningún otro numérico llega crudo al insert. Los campos de texto (`document_fields`) siguen guardando la forma original.
+
+Verificación: test de integración `b7d.integration.test.ts` (gate `DOCFLOW_B7_TEST=1`) con base desechable `docflow_test_b7` (creada, migrada 0000+0001, usada, borrada): documento con total "121.000,50" procesado por el worker real → `total_amount` NUMERIC "121000.5000", `total_cents` 12100050, `businessKey` correcto, campo total con `extractedValue` crudo y `normalizedValue` en centavos, línea normalizada, job completed. docflow_dev intacta (conteos baseline).

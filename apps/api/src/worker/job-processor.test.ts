@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RawExtraction } from "../services/extraction-provider.js";
 import { StorageReadError } from "../services/storage-provider.js";
 import {
+  normalizeResolvedTotal,
   processNext,
   recoverStale,
   type DetectionCandidate,
@@ -434,5 +435,76 @@ describe("job-processor", () => {
     expect(world.jobs.get("job-viejo")?.startedAt).toBeNull();
     expect(world.jobs.get("job-agotado")?.status).toBe("blocked");
     expect(world.docs.get("doc-agotado")?.status).toBe("blocked");
+  });
+});
+
+describe("job-processor B7d: total resuelto con coma", () => {
+  function commaExtraction(total: string): RawExtraction {
+    const base = cannedExtraction();
+    return {
+      ...base,
+      fields: base.fields.map((f) =>
+        f.key === "total_amount" ? { ...f, rawValue: total } : f,
+      ),
+      lineItems: [
+        { description: "Libros", quantity: "50", unitPrice: "2.420,01", lineTotal: total },
+      ],
+    };
+  }
+
+  it("total con coma llega al resolved con punto y el job completa", async () => {
+    const { world, deps } = makeWorld();
+    seedJob(world);
+    seedDoc(world);
+    deps.extractor = {
+      name: "stub",
+      modelVersion: "stub-1",
+      analyze: async () => commaExtraction("121.000,50"),
+    };
+    const result = await processNext(deps, NOW);
+    expect(result).toMatchObject({ claimed: true, outcome: "completed" });
+    const resolved = world.docs.get("doc-1")?.resolved as {
+      totalAmount: string;
+      businessKey: string;
+    };
+    expect(resolved.totalAmount).toBe("121000.50");
+    expect(resolved.businessKey).toContain("12100050");
+    // Las líneas ya venían normalizadas por el mapper (B7c).
+    const lines = world.lines.get("doc-1") as Array<{ unitPrice: string }>;
+    expect(lines[0]?.unitPrice).toBe("2420.01");
+  });
+
+  it("total con formato inválido → MappingError, job failed, nada persistido", async () => {
+    const { world, deps } = makeWorld();
+    seedJob(world);
+    seedDoc(world);
+    deps.extractor = {
+      name: "stub",
+      modelVersion: "stub-1",
+      analyze: async () => commaExtraction("12,34,56"),
+    };
+    const result = await processNext(deps, NOW);
+    expect(result).toMatchObject({ claimed: true, outcome: "failed" });
+    expect(world.jobs.get("job-1")?.lastError).toBe("mapping_error");
+    expect(world.docs.get("doc-1")?.resolved).toBeUndefined();
+    expect(world.fields.get("doc-1")).toBeUndefined();
+  });
+
+  it("normalizeResolvedTotal: null se conserva, coma normaliza, inválido lanza", () => {
+    const base = {
+      supplierName: null,
+      supplierTaxId: null,
+      invoiceNumber: null,
+      issueDate: null,
+      currency: null,
+      totalAmount: null as string | null,
+    };
+    expect(normalizeResolvedTotal(base).totalAmount).toBeNull();
+    expect(
+      normalizeResolvedTotal({ ...base, totalAmount: "121.000,50" }).totalAmount,
+    ).toBe("121000.50");
+    expect(() => normalizeResolvedTotal({ ...base, totalAmount: "12,34,56" })).toThrow(
+      /no es un decimal válido/,
+    );
   });
 });
