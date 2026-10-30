@@ -1,8 +1,11 @@
 /**
  * DocFlow B7a — Validación del dataset sintético de evaluación.
  *
- * Lee ground-truth.json y los 60 PDFs y verifica estructura, categorías,
- * casos DUP y correspondencia de páginas. No llama a ningún proveedor.
+ * Lee ground-truth.json y, cuando están generados, los 60 PDFs; verifica
+ * estructura, categorías, casos DUP y correspondencia de páginas.
+ * No llama a ningún proveedor. Los 3 tests PDF-dependientes se skipean
+ * si los PDFs no están en disco (no se versionan; se regeneran con
+ * `npx tsx scripts/datasets/generate.ts` desde apps/api).
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -26,8 +29,22 @@ function loadTruth(): TruthDoc[] {
   return JSON.parse(readFileSync(join(HERE, "ground-truth.json"), "utf-8")) as TruthDoc[];
 }
 
+// Los 3 tests PDF-dependientes se skipean cuando el dataset generado no
+// está en disco (los PDFs no se versionan; se regeneran localmente).
+// Desviación documentada respecto del mensaje original: `npm run
+// generate-dataset` no existe como script; el comando real es el de abajo.
+const pdfsPresent = readdirSync(HERE).some((f) => f.endsWith(".pdf"));
+const itPdf = pdfsPresent ? it : it.skip;
+const skipMsg = pdfsPresent
+  ? ""
+  : " (PDFs ausentes; ejecutá `npx tsx scripts/datasets/generate.ts` desde apps/api para habilitarlo)";
+
 describe("dataset ground truth", () => {
-  it("tiene 60 documentos con ids únicos y archivos existentes", () => {
+  it(`PDFs presentes: ${pdfsPresent ? "sí" : "no (regenerar con npx tsx scripts/datasets/generate.ts desde apps/api)"}`, () => {
+    expect(true).toBe(true); // solo informativo
+  });
+
+  itPdf("tiene 60 documentos con ids únicos y archivos existentes" + skipMsg, () => {
     const truths = loadTruth();
     expect(truths).toHaveLength(60);
     const ids = new Set(truths.map((t) => t.id));
@@ -95,7 +112,7 @@ describe("dataset ground truth", () => {
     }
   });
 
-  it("mínimo 6 documentos multi-página y 30 con líneas", async () => {
+  itPdf("mínimo 6 documentos multi-página y 30 con líneas" + skipMsg, async () => {
     const truths = loadTruth();
     expect(truths.filter((t) => t.pages >= 2)).toHaveLength(6);
     expect(truths.filter((t) => t.lines.length > 0).length).toBeGreaterThanOrEqual(30);
@@ -106,7 +123,7 @@ describe("dataset ground truth", () => {
     }
   });
 
-  it("las copias F son byte-idénticas a su fuente", () => {
+  itPdf("las copias F son byte-idénticas a su fuente" + skipMsg, () => {
     const pairs: Array<[string, string]> = [
       ["ds-dup-f01", "ds-clean-01"],
       ["ds-dup-f02", "ds-scan-01"],
