@@ -4,7 +4,7 @@ import type { OrganizationDetailResponse } from "@pensia-docflow/shared";
 import { DomainError } from "@pensia-docflow/shared";
 import { apiGet } from "../../lib/api-client";
 import { queryKeys } from "../../lib/query-keys";
-import { useSession } from "../../lib/session";
+import { useSession } from "../../hooks/useSession";
 import { OrgProvider } from "./OrgProvider";
 import { AppLayout } from "../layout/AppLayout";
 import { NotFoundPage } from "../../pages/NotFoundPage";
@@ -19,22 +19,22 @@ import { NotFoundPage } from "../../pages/NotFoundPage";
 export function ProtectedRoute() {
   const { orgId } = useParams();
   const location = useLocation();
-  const sessionQuery = useSession();
+  const session = useSession();
   const orgQuery = useQuery({
     queryKey: queryKeys.orgDetail(orgId ?? ""),
     queryFn: () =>
       apiGet<OrganizationDetailResponse>(`/organizations/${orgId}`),
-    enabled: sessionQuery.data?.user !== undefined && orgId !== undefined,
+    enabled: session.user !== null && orgId !== undefined,
     staleTime: 0,
   });
 
-  if (sessionQuery.isPending) {
+  if (session.isLoading) {
     return <p>Cargando…</p>;
   }
-  if (sessionQuery.isError) {
+  if (session.isError) {
     return <p>Ocurrió un error al cargar la sesión.</p>;
   }
-  if (sessionQuery.data?.user === undefined) {
+  if (session.user === null) {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }

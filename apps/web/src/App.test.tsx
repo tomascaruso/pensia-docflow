@@ -18,11 +18,21 @@ describe("App (humo F1)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renderiza la ruta /login sin errores de consola", () => {
+  it("renderiza la ruta /login sin errores de consola", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => null,
+        blob: async () => new Blob(["x"]),
+      })) as unknown as typeof fetch,
+    );
     render(<App />);
     expect(
-      screen.getByRole("heading", { name: "Acceso" }),
+      await screen.findByRole("heading", { name: "Acceso" }),
     ).toBeInTheDocument();
     expect(errorSpy).not.toHaveBeenCalled();
     errorSpy.mockRestore();

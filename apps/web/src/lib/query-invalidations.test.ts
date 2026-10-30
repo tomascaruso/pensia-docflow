@@ -5,6 +5,7 @@ import {
   invalidateAfterExportCreate,
   invalidateAfterGrantChange,
   invalidateAfterInvitationAccept,
+  invalidateAfterInvitationReject,
   invalidateAfterResolveCandidate,
   invalidateAfterRetry,
   invalidateAfterUpload,
@@ -25,6 +26,7 @@ function seededClient(): QueryClient {
   client.setQueryData(queryKeys.orgExports(orgId), []);
   client.setQueryData(queryKeys.session, {});
   client.setQueryData(queryKeys.meOrganizations, []);
+  client.setQueryData(queryKeys.meInvitations, []);
   return client;
 }
 
@@ -81,11 +83,20 @@ describe("query-invalidations", () => {
     expect(isInvalidated(client, queryKeys.orgSummary("org-1"))).toBe(false);
   });
 
-  it("aceptar invitación invalida session y mis organizaciones", async () => {
+  it("aceptar invitación invalida session, mis organizaciones e invitaciones", async () => {
     const client = seededClient();
     await invalidateAfterInvitationAccept(client);
     expect(isInvalidated(client, queryKeys.session)).toBe(true);
     expect(isInvalidated(client, queryKeys.meOrganizations)).toBe(true);
+    expect(isInvalidated(client, queryKeys.meInvitations)).toBe(true);
+  });
+
+  it("rechazar invitación invalida solo las invitaciones", async () => {
+    const client = seededClient();
+    await invalidateAfterInvitationReject(client);
+    expect(isInvalidated(client, queryKeys.meInvitations)).toBe(true);
+    expect(isInvalidated(client, queryKeys.session)).toBe(false);
+    expect(isInvalidated(client, queryKeys.meOrganizations)).toBe(false);
   });
 
   it("las claves son jerárquicas y distinguen organizaciones", () => {

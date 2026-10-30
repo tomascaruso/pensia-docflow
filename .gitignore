@@ -9,3 +9,7 @@ coverage/
 .vite/
 .taste-skill/
 apps/api/scripts/datasets/*.pdf
+
+# Playwright (F2 e2e): salida de corridas, no se versiona.
+test-results/
+playwright-report/

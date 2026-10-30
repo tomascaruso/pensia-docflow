@@ -68,11 +68,24 @@ export function invalidateAfterExportCreate(
   return client.invalidateQueries({ queryKey: queryKeys.orgExports(orgId) });
 }
 
+/**
+ * Aceptar invitación (F1, extendido en F2): invalida sesión,
+ * organizaciones E invitaciones (sin esto, volver a
+ * /sin-organizacion mostraría la invitación aceptada como pendiente).
+ */
 export function invalidateAfterInvitationAccept(
   client: QueryClient,
 ): Promise<void> {
   return Promise.all([
     client.invalidateQueries({ queryKey: queryKeys.session }),
     client.invalidateQueries({ queryKey: queryKeys.meOrganizations }),
+    client.invalidateQueries({ queryKey: queryKeys.meInvitations }),
   ]).then(() => undefined);
+}
+
+/** Rechazar invitación (F2): invalida solo las invitaciones. */
+export function invalidateAfterInvitationReject(
+  client: QueryClient,
+): Promise<void> {
+  return client.invalidateQueries({ queryKey: queryKeys.meInvitations });
 }

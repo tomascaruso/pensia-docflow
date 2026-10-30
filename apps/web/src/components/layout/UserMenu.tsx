@@ -1,30 +1,15 @@
-import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-import { apiPost } from "../../lib/api-client";
-import { queryClient } from "../../lib/query-client";
-import { useSession } from "../../lib/session";
+import { useSession } from "../../hooks/useSession";
+import { useSignOut } from "../../hooks/useSignOut";
 
 /**
- * Menú de usuario (F1). Muestra el email de la sesión y cierra sesión con
- * POST /api/auth/sign-out (forma exacta a confirmar en F2). Tras el cierre,
- * invalida la sesión y navega a /login.
+ * Menú de usuario (F1, logout por useSignOut en F2). Muestra el email
+ * de la sesión y cierra sesión; ante error, useSignOut muestra el toast
+ * y no limpia nada.
  */
 export function UserMenu() {
-  const sessionQuery = useSession();
-  const navigate = useNavigate();
-  const email = sessionQuery.data?.user.email;
-
-  async function handleLogout() {
-    try {
-      await apiPost("/api/auth/sign-out", {});
-    } catch {
-      toast.error("No se pudo cerrar la sesión.");
-      return;
-    }
-    queryClient.setQueryData(["session"], null);
-    await queryClient.invalidateQueries({ queryKey: ["session"] });
-    navigate("/login");
-  }
+  const { user } = useSession();
+  const signOut = useSignOut();
+  const email = user?.email;
 
   return (
     <div className="flex items-center gap-3">
@@ -35,7 +20,8 @@ export function UserMenu() {
       )}
       <button
         type="button"
-        onClick={handleLogout}
+        onClick={() => signOut.mutate()}
+        disabled={signOut.isPending}
         className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-raised"
       >
         Cerrar sesión

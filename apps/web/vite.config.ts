@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
@@ -33,5 +33,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
+    // Los specs e2e de Playwright (e2e/*.spec.ts) los corre Playwright,
+    // no vitest: vitest incluye *.spec.ts por defecto y los fallaría.
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 });
