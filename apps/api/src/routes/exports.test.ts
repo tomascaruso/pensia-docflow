@@ -681,3 +681,43 @@ describe("GET /organizations/:orgId/exports", () => {
     expect((await getList(app, "org-01", "?status=otro")).statusCode).toBe(400);
   });
 });
+
+describe("GET csv verifica export_documents (F0)", () => {
+  function csvSeed(tables: Tables): void {
+    baseSeed(tables);
+    seedExport(tables, {});
+    seedItem(tables, "export-01", "doc-01");
+  }
+
+  it("reviewer sin permiso → 403 auditado export.download_denied", async () => {
+    const { app, tables } = buildTestApp(REVIEWER, csvSeed);
+    await app.ready();
+    const res = await getCsv(app);
+    expect(res.statusCode).toBe(403);
+    const denied = auditOf(tables).filter(
+      (row) => row["action"] === "export.download_denied",
+    );
+    expect(denied).toHaveLength(1);
+    await app.close();
+  });
+
+  it("reviewer con grant export_documents → 200", async () => {
+    const { app } = buildTestApp(REVIEWER, (t) => {
+      csvSeed(t);
+      t.get(schema.memberPermissions)?.push({
+        id: "grant-01",
+        organizationId: "org-01",
+        userId: "rev-01",
+        permissionKey: "export_documents",
+        grantedBy: "admin-01",
+        grantedAt: new Date("2026-01-01T00:00:00Z"),
+        revokedBy: null,
+        revokedAt: null,
+      });
+    });
+    await app.ready();
+    const res = await getCsv(app);
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+});

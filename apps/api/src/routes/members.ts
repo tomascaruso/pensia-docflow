@@ -33,6 +33,7 @@ import {
 import {
   createDrizzleMemberRepository,
   createMemberServiceDeps,
+  findUserProfiles,
 } from "../services/member-drizzle.js";
 
 export interface RegisterMemberRoutesDeps {
@@ -104,12 +105,21 @@ export function registerMemberRoutes(
         },
         { organizationId },
       );
+      const profiles = await findUserProfiles(
+        deps.db,
+        members.map((member) => member.userId),
+      );
       return reply.code(200).send({
-        members: members.map((member) => ({
-          userId: member.userId,
-          role: member.role,
-          joinedAt: member.joinedAt.toISOString(),
-        })),
+        members: members.map((member) => {
+          const profile = profiles.get(member.userId);
+          return {
+            userId: member.userId,
+            role: member.role,
+            joinedAt: member.joinedAt.toISOString(),
+            name: profile?.name ?? null,
+            email: profile?.email ?? null,
+          };
+        }),
       });
     },
   );

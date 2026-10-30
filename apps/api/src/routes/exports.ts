@@ -12,12 +12,21 @@
  * única `db.transaction`: createExport (A-02, con maxDocuments
  * 100) + lectura de detalles confirman juntos (D8).
  *
- * Cadena GET csv/lista: sesión 401 → membresía 404 genérico, sin
- * requireRole (cualquier miembro puede descargar; la restricción
- * rige la creación, §5.1-7). Los errores de dominio burbujean al
- * error handler de app.ts (vía toHttp): no se capturan acá porque
- * no hay mensaje que transformar (a diferencia de B5, donde la
- * ruta limpiaba el prefijo del orquestador).
+ * Cadena GET lista: sesión 401 → membresía 404 genérico, sin
+ * requireRole (cualquier miembro puede listar; la restricción
+ * rige la creación, §5.1-7).
+ *
+ * Cadena GET csv (F0, fix de B6): sesión 401 → membresía 404
+ * genérico → requireRole con permiso export_documents (403
+ * auditado como `export.download_denied`). La decisión B6 de
+ * permitir la descarga a cualquier miembro queda derogada: la
+ * spec S7 exige que sin permiso de exportación no se pueda
+ * descargar ningún archivo, y la creación ya exigía el permiso.
+ *
+ * Los errores de dominio burbujean al error handler de app.ts
+ * (vía toHttp): no se capturan acá porque no hay mensaje que
+ * transformar (a diferencia de B5, donde la ruta limpiaba el
+ * prefijo del orquestador).
  *
  * La descarga no muta `exports.status` (deuda asíncrona de B6);
  * la única escritura del GET es la auditoría append-only.
@@ -167,6 +176,13 @@ export function registerExportRoutes(
     permission: "export_documents",
     deniedAction: "export.create_denied",
   });
+  const downloadRole = requireRole({
+    checkEffectivePermission: (input) =>
+      hasEffectivePermission(createPermissionServiceDeps(deps.db), input),
+    audit: dbAudit,
+    permission: "export_documents",
+    deniedAction: "export.download_denied",
+  });
 
   app.post(
     "/organizations/:orgId/exports",
@@ -234,7 +250,7 @@ export function registerExportRoutes(
 
   app.get(
     "/organizations/:orgId/exports/:exportId/csv",
-    { preHandler: [session, membership] },
+    { preHandler: [session, membership, downloadRole] },
     async (request, reply) => {
       const user = request.user;
       if (!user) {

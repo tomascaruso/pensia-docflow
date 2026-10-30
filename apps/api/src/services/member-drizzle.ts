@@ -15,6 +15,7 @@ import {
 } from "../db/audit-writer.js";
 import type { DocFlowRole } from "../db/permission-service.js";
 import * as schema from "../db/schema.js";
+import * as authTables from "../auth/tables.js";
 import type {
   MemberAudit,
   MemberRecord,
@@ -88,6 +89,43 @@ async function selectMembersOfOrg(
     }
   }
   return mapped;
+}
+
+/**
+ * Perfiles de usuario (nombre y correo) para el listado de
+ * miembros (F0). Una consulta por usuario, fusionada en memoria:
+ * el fake de tests no evalúa `inArray` y la tabla `user` de
+ * Better Auth no se une con SQL en este adaptador. Un usuario
+ * sin fila en `user` (caso raro) devuelve nulls, no 404.
+ */
+export async function findUserProfiles(
+  client: MemberDrizzleClient,
+  userIds: string[],
+): Promise<Map<string, { name: string | null; email: string | null }>> {
+  const out = new Map<string, { name: string | null; email: string | null }>();
+  for (const userId of userIds) {
+    const rows = await client
+      .select({
+        id: authTables.user.id,
+        name: authTables.user.name,
+        email: authTables.user.email,
+      })
+      .from(authTables.user)
+      .where(eq(authTables.user.id, userId))
+      .limit(1);
+    const row = rows[0];
+    if (row === undefined) {
+      out.set(userId, { name: null, email: null });
+      continue;
+    }
+    const name = row["name"];
+    const email = row["email"];
+    out.set(userId, {
+      name: typeof name === "string" ? name : null,
+      email: typeof email === "string" ? email : null,
+    });
+  }
+  return out;
 }
 
 export function createDrizzleMemberRepository(
