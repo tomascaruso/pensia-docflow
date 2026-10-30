@@ -210,10 +210,10 @@ interface TestApp {
   db: FakeDb;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   seedOrg(tables, "org-01");
   seedOrg(tables, "org-02");
@@ -367,14 +367,14 @@ async function getList(
 
 describe("POST /organizations/:orgId/exports", () => {
   it("401 sin sesión", async () => {
-    const { app } = buildTestApp(null, baseSeed);
+    const { app } = await buildTestApp(null, baseSeed);
     await app.ready();
     const res = await postExport(app);
     expect(res.statusCode).toBe(401);
   });
 
   it("§5.1-7: reviewer sin export_documents → 403 auditado, sin fila", async () => {
-    const { app, tables } = buildTestApp(REVIEWER, baseSeed);
+    const { app, tables } = await buildTestApp(REVIEWER, baseSeed);
     await app.ready();
     const res = await postExport(app);
     expect(res.statusCode).toBe(403);
@@ -386,7 +386,7 @@ describe("POST /organizations/:orgId/exports", () => {
   });
 
   it("reviewer con grant → 201 con id/count/status/createdAt", async () => {
-    const { app, tables } = buildTestApp(REVIEWER, (t) => {
+    const { app, tables } = await buildTestApp(REVIEWER, (t) => {
       baseSeed(t);
       seedGrant(t, "org-01", "rev-01", "export_documents");
     });
@@ -407,14 +407,14 @@ describe("POST /organizations/:orgId/exports", () => {
   });
 
   it("org_admin → 201", async () => {
-    const { app } = buildTestApp(ADMIN, baseSeed);
+    const { app } = await buildTestApp(ADMIN, baseSeed);
     await app.ready();
     const res = await postExport(app);
     expect(res.statusCode).toBe(201);
   });
 
   it("documento de otra org → 404 sin fila", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       baseSeed(t);
       seedDoc(t, { id: "doc-02", organizationId: "org-02" });
     });
@@ -427,7 +427,7 @@ describe("POST /organizations/:orgId/exports", () => {
   });
 
   it("documento no aprobado → 422 sin fila", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       baseSeed(t);
       const doc = (t.get(schema.documents) ?? []).find(
         (row) => row["id"] === "doc-01",
@@ -446,7 +446,7 @@ describe("POST /organizations/:orgId/exports", () => {
   });
 
   it("vacía → 400; duplicados → 400; no arreglo → 400", async () => {
-    const { app } = buildTestApp(ADMIN, baseSeed);
+    const { app } = await buildTestApp(ADMIN, baseSeed);
     await app.ready();
     expect((await postExport(app, "org-01", { documentIds: [] })).statusCode).toBe(400);
     expect(
@@ -462,7 +462,7 @@ describe("POST /organizations/:orgId/exports", () => {
   });
 
   it("sobre 100 documentos → 400 export_too_many_documents", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       baseSeed(t);
       for (let i = 2; i <= 101; i += 1) {
         seedDoc(t, { id: `doc-${i}` });
@@ -487,7 +487,7 @@ describe("GET /organizations/:orgId/exports/:exportId/csv", () => {
   }
 
   it("main: 200, headers CSV, BOM, fila y auditoría", async () => {
-    const { app, tables } = buildTestApp(ADMIN, csvSeed);
+    const { app, tables } = await buildTestApp(ADMIN, csvSeed);
     await app.ready();
     const res = await getCsv(app);
     expect(res.statusCode).toBe(200);
@@ -510,7 +510,7 @@ describe("GET /organizations/:orgId/exports/:exportId/csv", () => {
   });
 
   it("lines: 200 con header de líneas", async () => {
-    const { app } = buildTestApp(ADMIN, csvSeed);
+    const { app } = await buildTestApp(ADMIN, csvSeed);
     await app.ready();
     const res = await getCsv(app, "export-01", "org-01", "?file=lines");
     expect(res.statusCode).toBe(200);
@@ -520,14 +520,14 @@ describe("GET /organizations/:orgId/exports/:exportId/csv", () => {
   });
 
   it("file inválido → 400", async () => {
-    const { app } = buildTestApp(ADMIN, csvSeed);
+    const { app } = await buildTestApp(ADMIN, csvSeed);
     await app.ready();
     const res = await getCsv(app, "export-01", "org-01", "?file=otro");
     expect(res.statusCode).toBe(400);
   });
 
   it("exportación de otra org → 404", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       baseSeed(t);
       seedExport(t, { id: "export-02", organizationId: "org-02" });
       seedItem(t, "export-02", "doc-01");
@@ -538,7 +538,7 @@ describe("GET /organizations/:orgId/exports/:exportId/csv", () => {
   });
 
   it("documento derivado → 409 con problems y auditoría de fallo", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       csvSeed(t);
       const doc = (t.get(schema.documents) ?? []).find(
         (row) => row["id"] === "doc-01",
@@ -562,7 +562,7 @@ describe("GET /organizations/:orgId/exports/:exportId/csv", () => {
   });
 
   it("document_count manipulado → 409 por coherencia", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       csvSeed(t);
       const exp = (t.get(schema.exports) ?? []).find(
         (row) => row["id"] === "export-01",
@@ -582,7 +582,7 @@ describe("GET /organizations/:orgId/exports/:exportId/csv", () => {
   });
 
   it("escape de fórmulas en la descarga", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       baseSeed(t);
       const doc = (t.get(schema.documents) ?? []).find(
         (row) => row["id"] === "doc-01",
@@ -603,7 +603,7 @@ describe("GET /organizations/:orgId/exports/:exportId/csv", () => {
     const prev = process.env["DOCFLOW_CSV_MAX_BYTES"];
     process.env["DOCFLOW_CSV_MAX_BYTES"] = "10";
     try {
-      const { app } = buildTestApp(ADMIN, csvSeed);
+      const { app } = await buildTestApp(ADMIN, csvSeed);
       await app.ready();
       const res = await getCsv(app);
       expect(res.statusCode).toBe(413);
@@ -642,7 +642,7 @@ describe("GET /organizations/:orgId/exports", () => {
   }
 
   it("lista ordenada DESC con total, limit y offset", async () => {
-    const { app } = buildTestApp(ADMIN, listSeed);
+    const { app } = await buildTestApp(ADMIN, listSeed);
     await app.ready();
     const res = await getList(app);
     expect(res.statusCode).toBe(200);
@@ -667,7 +667,7 @@ describe("GET /organizations/:orgId/exports", () => {
   });
 
   it("filtro por status; limit se clamp a 100; query inválida → 400", async () => {
-    const { app } = buildTestApp(ADMIN, listSeed);
+    const { app } = await buildTestApp(ADMIN, listSeed);
     await app.ready();
     const filtered = await getList(app, "org-01", "?status=pending");
     expect(filtered.statusCode).toBe(200);
@@ -690,7 +690,7 @@ describe("GET csv verifica export_documents (F0)", () => {
   }
 
   it("reviewer sin permiso → 403 auditado export.download_denied", async () => {
-    const { app, tables } = buildTestApp(REVIEWER, csvSeed);
+    const { app, tables } = await buildTestApp(REVIEWER, csvSeed);
     await app.ready();
     const res = await getCsv(app);
     expect(res.statusCode).toBe(403);
@@ -702,7 +702,7 @@ describe("GET csv verifica export_documents (F0)", () => {
   });
 
   it("reviewer con grant export_documents → 200", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       csvSeed(t);
       t.get(schema.memberPermissions)?.push({
         id: "grant-01",

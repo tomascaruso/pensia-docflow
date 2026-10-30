@@ -366,7 +366,8 @@ describe.skipIf(!process.env.DOCFLOW_B6_TEST)(
         basePath: storageDir,
         tokenSecret: "b6-test-secret",
       });
-      app = buildApp({
+      app = await buildApp({
+        disableRateLimit: true,
         db: instance.db,
         auth: instance.auth,
         platformAdminEmails: [ADMIN_EMAIL],

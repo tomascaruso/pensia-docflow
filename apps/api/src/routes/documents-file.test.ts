@@ -140,10 +140,10 @@ interface TestApp {
   files: Map<string, Buffer>;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   seedOrg(tables, "org-01");
   seedOrg(tables, "org-02");
@@ -160,7 +160,8 @@ function buildTestApp(
     handler: async () => new Response("no usado", { status: 404 }),
   };
   const files = new Map<string, Buffer>();
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -173,7 +174,7 @@ const REVIEWER = fakeUser("rev-01", "rev@example.com");
 
 describe("GET /organizations/:orgId/documents/:docId/file", () => {
   it("descarga OK: bytes, Content-Type y Content-Disposition", async () => {
-    const { app, files } = buildTestApp(REVIEWER, (t) => {
+    const { app, files } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, "doc-01", "org-01");
     });
@@ -193,7 +194,7 @@ describe("GET /organizations/:orgId/documents/:docId/file", () => {
   });
 
   it("401 sin sesión", async () => {
-    const { app } = buildTestApp(null, (t) => {
+    const { app } = await buildTestApp(null, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, "doc-01", "org-01");
     });
@@ -207,7 +208,7 @@ describe("GET /organizations/:orgId/documents/:docId/file", () => {
   });
 
   it("org incorrecta → 404 genérico", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, "doc-01", "org-02");
     });
@@ -221,7 +222,7 @@ describe("GET /organizations/:orgId/documents/:docId/file", () => {
   });
 
   it("archivo inexistente → 404", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, "doc-01", "org-01");
     });

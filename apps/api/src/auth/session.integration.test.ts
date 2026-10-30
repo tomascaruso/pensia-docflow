@@ -98,7 +98,8 @@ describe.skipIf(!process.env.DOCFLOW_B1_TEST)(
     beforeAll(async () => {
       const instance = await import("../auth/instance.js");
       const deps = createPermissionServiceDeps(instance.db);
-      app = buildApp({
+      app = await buildApp({
+        disableRateLimit: true,
         db: instance.db,
         auth: instance.auth,
         platformAdminEmails: [ADMIN_EMAIL],

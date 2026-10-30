@@ -141,10 +141,10 @@ interface TestApp {
   db: FakeDb;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   seedOrg(tables);
   seed(tables);
@@ -159,7 +159,8 @@ function buildTestApp(
     },
     handler: async () => new Response("no usado", { status: 404 }),
   };
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -172,7 +173,7 @@ const REVIEWER = fakeUser("rev-01", "rev@example.com");
 
 describe("POST /organizations/:id/invitations", () => {
   it("201 admin: fila + auditoría sin email", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
     });
     await app.ready();
@@ -202,7 +203,7 @@ describe("POST /organizations/:id/invitations", () => {
   });
 
   it("403 reviewer, 401 sin sesión, 404 no miembro", async () => {
-    const reviewerApp = buildTestApp(REVIEWER, (t) => {
+    const reviewerApp = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
     });
     await reviewerApp.app.ready();
@@ -215,7 +216,7 @@ describe("POST /organizations/:id/invitations", () => {
     expect(forbidden.statusCode).toBe(403);
     await reviewerApp.app.close();
 
-    const noSessionApp = buildTestApp(null, () => {});
+    const noSessionApp = await buildTestApp(null, () => {});
     await noSessionApp.app.ready();
     const unauthorized = await noSessionApp.app.inject({
       method: "POST",
@@ -226,7 +227,7 @@ describe("POST /organizations/:id/invitations", () => {
     expect(unauthorized.statusCode).toBe(401);
     await noSessionApp.app.close();
 
-    const outsiderApp = buildTestApp(ADMIN, () => {});
+    const outsiderApp = await buildTestApp(ADMIN, () => {});
     await outsiderApp.app.ready();
     const notFound = await outsiderApp.app.inject({
       method: "POST",
@@ -239,7 +240,7 @@ describe("POST /organizations/:id/invitations", () => {
   });
 
   it("400 sin email o con email inválido", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
     });
     await app.ready();
@@ -256,7 +257,7 @@ describe("POST /organizations/:id/invitations", () => {
   });
 
   it("409 ya miembro y 409 duplicada pendiente", async () => {
-    const memberApp = buildTestApp(ADMIN, (t) => {
+    const memberApp = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedUser(t, "u-01", "miembro@example.com");
       seedMember(t, "org-01", "u-01", "reviewer");
@@ -271,7 +272,7 @@ describe("POST /organizations/:id/invitations", () => {
     expect(alreadyMember.statusCode).toBe(409);
     await memberApp.app.close();
 
-    const dupApp = buildTestApp(ADMIN, (t) => {
+    const dupApp = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedInvitation(t, { email: "pend@example.com" });
     });
@@ -290,7 +291,7 @@ describe("POST /organizations/:id/invitations", () => {
 describe("POST accept/reject", () => {
   it("accept 200: miembros + accepted + auditoría", async () => {
     const invitee = fakeUser("u-99", "invitada@example.com");
-    const { app, tables } = buildTestApp(invitee, (t) => {
+    const { app, tables } = await buildTestApp(invitee, (t) => {
       seedInvitation(t);
     });
     await app.ready();
@@ -369,7 +370,7 @@ describe("POST accept/reject", () => {
       },
     ];
     for (const testCase of cases) {
-      const { app } = buildTestApp(testCase.user, testCase.setup);
+      const { app } = await buildTestApp(testCase.user, testCase.setup);
       await app.ready();
       const res = await app.inject({
         method: "POST",
@@ -382,7 +383,7 @@ describe("POST accept/reject", () => {
 
   it("reject 200 y 403 email distinto", async () => {
     const invitee = fakeUser("u-99", "invitada@example.com");
-    const { app, tables } = buildTestApp(invitee, (t) => {
+    const { app, tables } = await buildTestApp(invitee, (t) => {
       seedInvitation(t);
     });
     await app.ready();
@@ -400,7 +401,7 @@ describe("POST accept/reject", () => {
     expect(audit[0]).toMatchObject({ action: "invitation.rejected" });
     await app.close();
 
-    const other = buildTestApp(fakeUser("u-77", "otra@example.com"), (t) => {
+    const other = await buildTestApp(fakeUser("u-77", "otra@example.com"), (t) => {
       seedInvitation(t);
     });
     await other.app.ready();
@@ -415,7 +416,7 @@ describe("POST accept/reject", () => {
 
 describe("GET invitations", () => {
   it("admin lista solo pendientes; reviewer 403", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedInvitation(t, { id: "inv-01" });
       seedInvitation(t, { id: "inv-02", status: "accepted" });
@@ -435,7 +436,7 @@ describe("GET invitations", () => {
     expect(body.invitations.map((row) => row.id)).toEqual(["inv-01"]);
     await app.close();
 
-    const reviewerApp = buildTestApp(REVIEWER, (t) => {
+    const reviewerApp = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
     });
     await reviewerApp.app.ready();
@@ -449,7 +450,7 @@ describe("GET invitations", () => {
 
   it("/me/invitations: pendientes con nombre de org; vacío sin invitaciones", async () => {
     const invitee = fakeUser("u-99", "invitada@example.com");
-    const { app } = buildTestApp(invitee, (t) => {
+    const { app } = await buildTestApp(invitee, (t) => {
       seedInvitation(t);
     });
     await app.ready();
@@ -462,7 +463,7 @@ describe("GET invitations", () => {
     expect(body.invitations[0]?.["organizationName"]).toBe("Org Uno");
     await app.close();
 
-    const emptyApp = buildTestApp(invitee, () => {});
+    const emptyApp = await buildTestApp(invitee, () => {});
     await emptyApp.app.ready();
     const empty = await emptyApp.app.inject({
       method: "GET",

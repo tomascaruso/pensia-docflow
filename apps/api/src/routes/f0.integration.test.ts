@@ -181,7 +181,8 @@ describe.skipIf(!process.env.DOCFLOW_F0_TEST)(
         basePath: storageDir,
         tokenSecret: "f0-test-secret",
       });
-      app = buildApp({
+      app = await buildApp({
+        disableRateLimit: true,
         db: instance.db,
         auth: instance.auth,
         platformAdminEmails: [ADMIN_EMAIL],

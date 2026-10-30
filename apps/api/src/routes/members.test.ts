@@ -77,10 +77,10 @@ interface TestApp {
   tables: Tables;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   tables.get(schema.organizations)?.push({
     id: "org-01",
@@ -100,7 +100,8 @@ function buildTestApp(
     },
     handler: async () => new Response("no usado", { status: 404 }),
   };
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -113,7 +114,7 @@ const REVIEWER = fakeUser("rev-01", "rev@example.com");
 
 describe("GET /organizations/:id/members", () => {
   it("miembro lista; no miembro 404; sin sesión 401", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
     });
@@ -132,7 +133,7 @@ describe("GET /organizations/:id/members", () => {
     ]);
     await app.close();
 
-    const outsiderApp = buildTestApp(ADMIN, () => {});
+    const outsiderApp = await buildTestApp(ADMIN, () => {});
     await outsiderApp.app.ready();
     const notFound = await outsiderApp.app.inject({
       method: "GET",
@@ -141,7 +142,7 @@ describe("GET /organizations/:id/members", () => {
     expect(notFound.statusCode).toBe(404);
     await outsiderApp.app.close();
 
-    const noSessionApp = buildTestApp(null, () => {});
+    const noSessionApp = await buildTestApp(null, () => {});
     await noSessionApp.app.ready();
     const unauthorized = await noSessionApp.app.inject({
       method: "GET",
@@ -154,7 +155,7 @@ describe("GET /organizations/:id/members", () => {
 
 describe("PATCH /organizations/:id/members/:userId/role", () => {
   it("reviewer→admin 200 + auditoría; admin→reviewer con otro admin 200", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
     });
@@ -187,7 +188,7 @@ describe("PATCH /organizations/:id/members/:userId/role", () => {
   });
 
   it("último admin → 409 auditado y rol intacto", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
     });
@@ -212,7 +213,7 @@ describe("PATCH /organizations/:id/members/:userId/role", () => {
   });
 
   it("reviewer no puede cambiar roles 403; destino no miembro 404; rol inválido 400", async () => {
-    const reviewerApp = buildTestApp(REVIEWER, (t) => {
+    const reviewerApp = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
     });
@@ -226,7 +227,7 @@ describe("PATCH /organizations/:id/members/:userId/role", () => {
     expect(forbidden.statusCode).toBe(403);
     await reviewerApp.app.close();
 
-    const adminApp = buildTestApp(ADMIN, (t) => {
+    const adminApp = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
     });
     await adminApp.app.ready();
@@ -250,7 +251,7 @@ describe("PATCH /organizations/:id/members/:userId/role", () => {
 
 describe("GET /organizations/:id/members con perfiles (F0)", () => {
   it("incluye name y email; miembro sin fila en user → nulls", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedMember(t, "org-01", "ghost-01", "reviewer");

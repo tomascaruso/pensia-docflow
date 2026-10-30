@@ -141,10 +141,10 @@ interface TestApp {
   app: FastifyInstance;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   tables.get(schema.organizations)?.push({
     id: "org-01",
@@ -164,7 +164,8 @@ function buildTestApp(
     },
     handler: async () => new Response("no usado", { status: 404 }),
   };
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -177,7 +178,7 @@ const ADMIN = fakeUser("admin-01", "admin@example.com");
 
 describe("GET /organizations/:orgId/summary", () => {
   it("org vacía: todo en cero; org con actividad: contadores, atención, errores y actividad", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
     });
     await app.ready();
@@ -204,7 +205,7 @@ describe("GET /organizations/:orgId/summary", () => {
     });
     await app.close();
 
-    const full = buildTestApp(REVIEWER, (t) => {
+    const full = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, "doc-nr-1", "needs_review", "2026-02-10T00:00:00Z");
       seedDoc(t, "doc-nr-2", "needs_review", "2026-02-09T00:00:00Z");
@@ -272,7 +273,7 @@ describe("GET /organizations/:orgId/summary", () => {
     ]);
     await full.app.close();
 
-    const outsider = buildTestApp(ADMIN, () => {});
+    const outsider = await buildTestApp(ADMIN, () => {});
     await outsider.app.ready();
     expect(
       (
@@ -284,7 +285,7 @@ describe("GET /organizations/:orgId/summary", () => {
     ).toBe(404);
     await outsider.app.close();
 
-    const noSession = buildTestApp(null, () => {});
+    const noSession = await buildTestApp(null, () => {});
     await noSession.app.ready();
     expect(
       (

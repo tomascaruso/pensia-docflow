@@ -228,10 +228,10 @@ interface TestApp {
   db: FakeDb;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   seedOrg(tables, "org-01", "Org Uno");
   seedOrg(tables, "org-02", "Org Dos");
@@ -247,7 +247,8 @@ function buildTestApp(
     },
     handler: async () => new Response("no usado", { status: 404 }),
   };
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -293,7 +294,7 @@ function auditOf(tables: Tables): FakeRow[] {
 
 describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   it("401 sin sesión", async () => {
-    const { app } = buildTestApp(null, (t) => {
+    const { app } = await buildTestApp(null, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, {});
     });
@@ -304,7 +305,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("404 documento de otra organización (genérico)", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, { id: "doc-02", organizationId: "org-02" });
     });
@@ -315,7 +316,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("§5.1-1: reviewer sin grant → 403 + auditoría decision_denied", async () => {
-    const { app, tables } = buildTestApp(REVIEWER, (t) => {
+    const { app, tables } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, {});
     });
@@ -330,7 +331,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("§5.1-2 y §5.1-3: grant vigente aprueba; revocado → 403 inmediato", async () => {
-    const { app, tables } = buildTestApp(REVIEWER, (t) => {
+    const { app, tables } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, {});
       seedFields(t, "doc-01");
@@ -352,7 +353,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("200 aprobar: decisión, decidedAt y approvedValue snapshot", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, {});
       seedFields(t, "doc-01");
@@ -378,7 +379,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("200 aprobar con correcciones: correctedValue, businessKey y approvedValue", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, {});
       seedFields(t, "doc-01");
@@ -403,7 +404,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("200 rechazar con justificación: sin approvedValue", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, {});
       seedFields(t, "doc-01");
@@ -423,7 +424,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("409 bloqueo por candidatos con blockers", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, {});
       seedDoc(t, { id: "doc-02", status: "needs_review" });
@@ -443,7 +444,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("409 bloqueo por validaciones con blockers", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, {});
       seedValidation(t, "doc-01", "required_fields");
@@ -461,7 +462,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("Q-B5-11 en ruta: exacto con candidato resuelto NO bloquea", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, {});
       seedDoc(t, { id: "doc-02", status: "approved" });
@@ -475,7 +476,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("422 coherencia: corrección previa sin reflejo en resueltos", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, {});
       seedFields(t, "doc-01", {
@@ -491,7 +492,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("422 transición inválida: documento ya aprobado", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, { status: "approved" });
     });
@@ -504,7 +505,7 @@ describe("POST /organizations/:orgId/documents/:docId/decisions", () => {
   });
 
   it("400: decisión inválida, rechazo sin justificación, correcciones con rechazo, clave inválida", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, {});
       seedFields(t, "doc-01");

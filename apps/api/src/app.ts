@@ -16,6 +16,16 @@
  * 100 req/min en `/api/auth/*`, store en memoria, válido solo
  * para instancia única en MVP — Q6).
  *
+ * El register de rate-limit DEBE esperarse con await ANTES de
+ * registrar las rutas: @fastify/rate-limit instala su límite con
+ * un hook onRoute que solo se dispara para rutas registradas
+ * DESPUÉS de que el plugin carga. Sin await, las rutas se
+ * registraban en el mismo tick antes de ready() y el límite
+ * quedaba inactivo en todas las rutas (hallazgo F2, oct-2026).
+ * Por eso `buildApp` es asíncrono y sus llamadores usan await.
+ * `disableRateLimit` (solo tests) omite el register por completo;
+ * el test de integración de rate limit lo pasa en false explícito.
+ *
  * Errores: el error handler traduce errores de dominio con
  * `http-mapping` (D9 → HTTP); errores Fastify 4xx preservan su
  * status; cualquier otro error es 500 genérico (sin filtrar
@@ -56,9 +66,13 @@ export interface BuildAppOptions {
   platformAdminEmails?: string[];
   trustedOrigins?: string[];
   storage?: UploadStoragePort;
+  /** Desactiva el rate limit (solo tests; default false). */
+  disableRateLimit?: boolean;
 }
 
-export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
+export async function buildApp(
+  options: BuildAppOptions = {},
+): Promise<FastifyInstance> {
   const app = Fastify();
   app.register(cors, {
     origin: options.trustedOrigins ?? [],
@@ -66,10 +80,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
   });
-  app.register(rateLimit, {
-    max: 300,
-    timeWindow: "1 minute",
-  });
+  if (options.disableRateLimit !== true) {
+    // Await obligatorio: sin él, onRoute no se dispara para las
+    // rutas que se registran debajo y el límite queda inactivo.
+    await app.register(rateLimit, {
+      global: true,
+      max: 300,
+      timeWindow: "1 minute",
+    });
+  }
   // Antes de las rutas: `req.file()` lo provee este plugin. Los
   // límites globales coinciden con los de la ruta de documentos
   // (10 MB, 1 archivo); la ruta los vuelve a declarar por llamada.
