@@ -35,12 +35,25 @@
  *
  * `lastError` guarda códigos estables, nunca mensajes con
  * contenido del documento (D7).
+ *
+ * B7d: `resolved.totalAmount` se normaliza con `normalizeDecimal`
+ * antes de la tx final. El mapper ya normaliza las líneas
+ * (asDecimalString, B7c) y el total para centavos/clave, pero
+ * guardaba la forma original en `resolved.totalAmount`: un total
+ * con coma ("121.000,50") rompería el insert NUMERIC(19,4).
+ * Decisión documentada: si `normalizeDecimal` devuelve null
+ * (formato inválido), se lanza MappingError — igual que un
+ * decimal de línea inválido — y el job va a failed/blocked por
+ * el camino existente, nunca se guarda NULL silencioso ni el
+ * crudo inválido. Los campos de texto (`document_fields`)
+ * siguen guardando la forma original.
  */
 import {
   puedeTransitar,
   type DocumentStatus,
 } from "../db/state-machine.js";
 import { mapExtraction, type MappedDocument } from "../services/document-mapper.js";
+import { normalizeDecimal } from "../services/decimal-normalizer.js";
 import type { ExtractionProvider } from "../services/extraction-provider.js";
 import { MappingError } from "../services/document-mapper.js";
 import { StorageReadError } from "../services/storage-provider.js";
@@ -254,6 +267,26 @@ function requireTransition(
   }
 }
 
+/**
+ * B7d: normaliza el total resuelto a forma canónica con punto
+ * antes del insert NUMERIC. Null solo si ya era null; formato
+ * inválido → MappingError (fallo del job, nunca NULL silencioso).
+ */
+export function normalizeResolvedTotal(
+  resolved: ProcessorResolved,
+): ProcessorResolved {
+  if (resolved.totalAmount === null) {
+    return resolved;
+  }
+  const normalized = normalizeDecimal(resolved.totalAmount);
+  if (normalized === null) {
+    throw new MappingError(
+      `totalAmount no es un decimal válido: ${resolved.totalAmount}.`,
+    );
+  }
+  return { ...resolved, totalAmount: normalized };
+}
+
 export async function processNext(
   deps: JobProcessorDeps,
   now: Date,
@@ -358,12 +391,14 @@ export async function processNext(
     });
     const mapped = mapExtraction(extraction, deps.extractor.name);
     const validations = deps.validate(mapped);
+    // B7d: el total resuelto debe llegar al NUMERIC con punto.
+    const resolved = normalizeResolvedTotal(mapped.resolved);
 
     await deps.transact(async (tx) => {
       await tx.documents.upsertFields(document.id, mapped.fields);
       await tx.documents.insertLines(document.id, mapped.lines);
       await tx.documents.updateResolved(document.id, {
-        ...mapped.resolved,
+        ...resolved,
         businessKey: mapped.businessKey,
       });
       await tx.validations.insert(document.id, validations);

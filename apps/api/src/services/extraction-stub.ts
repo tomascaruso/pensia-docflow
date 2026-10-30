@@ -217,26 +217,3 @@ export function createStubExtractionProvider(
     },
   };
 }
-
-/**
- * Resuelve el proveedor por nombre. Falla rápido ante un valor
- * desconocido: en B4 solo existe el stub.
- */
-export function resolveExtractionProvider(
-  name: string,
-  readFile: StubFileReader,
-): ExtractionProvider {
-  if (name === "stub") {
-    return createStubExtractionProvider(readFile);
-  }
-  throw new Error(
-    `Proveedor de extracción desconocido: ${name}. En B4 solo existe "stub".`,
-  );
-}
-
-export function createExtractionProviderFromEnv(
-  readFile: StubFileReader,
-): ExtractionProvider {
-  const name = process.env.EXTRACTION_PROVIDER ?? "stub";
-  return resolveExtractionProvider(name, readFile);
-}

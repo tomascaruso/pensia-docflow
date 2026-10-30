@@ -24,6 +24,12 @@
  *   no con un flag que el mapper invente.
  * - `boundingBox` y `rawPayloadRef` se descartan: el esquema H1
  *   no tiene columnas para ellos (deuda documentada de B4).
+ * - B7c: los importes se normalizan con `normalizeDecimal`
+ *   antes de validar (líneas) y antes de convertir a centavos
+ *   (total y clave de negocio): punto/coma decimal y miles con
+ *   punto o coma llegan a forma canónica con punto. La columna
+ *   resuelta `totalAmount` sigue guardando la forma original
+ *   (contrato B4); la clave de negocio usa la forma normalizada.
  * - Las columnas resueltas de `documents` guardan los valores
  *   extraídos (forma original), salvo `issueDate` que debe ser
  *   `Date` (la columna es DATE) a partir del ISO normalizado.
@@ -38,6 +44,7 @@ import {
   normalizeTaxId,
   totalCentsFromAmount,
 } from "../db/business-key.js";
+import { normalizeDecimal } from "./decimal-normalizer.js";
 import type { RawExtraction } from "./extraction-provider.js";
 
 export class MappingError extends Error {
@@ -111,10 +118,13 @@ function asDecimalString(value: unknown, what: string): string | null {
   if (text === null) {
     return null;
   }
-  if (!DECIMAL_PATTERN.test(text.trim())) {
+  // B7c: el modelo puede devolver comas decimales o miles; se
+  // normaliza antes de validar, para no fallar el documento.
+  const normalized = normalizeDecimal(text);
+  if (normalized === null || !DECIMAL_PATTERN.test(normalized)) {
     throw new MappingError(`${what} no es un decimal válido: ${text}.`);
   }
-  return text.trim();
+  return normalized;
 }
 
 function normalizeField(
@@ -136,7 +146,10 @@ function normalizeField(
     case "currency":
       return normalizeCurrency(extracted);
     case "total_amount":
-      return totalCentsFromAmount(extracted);
+      // B7c: normalizar antes de convertir a centavos; si el
+      // formato es inválido, totalCentsFromAmount devuelve null
+      // igual que antes (no se lanza MappingError en el total).
+      return totalCentsFromAmount(normalizeDecimal(extracted) ?? extracted);
   }
 }
 
@@ -224,6 +237,13 @@ export function mapExtraction(
     totalAmount: byKeyValue("total_amount"),
   };
 
+  // B7c: la clave de negocio usa el total normalizado (con punto),
+  // no el crudo: un total con coma debe poder matchear a su gemelo.
+  // resolved.totalAmount sigue guardando la forma original (B4).
+  const rawTotal = resolved.totalAmount;
+  const normalizedTotal =
+    rawTotal === null ? null : (normalizeDecimal(rawTotal) ?? rawTotal);
+
   return {
     fields,
     lines,
@@ -232,7 +252,7 @@ export function mapExtraction(
       supplierName: resolved.supplierName,
       supplierTaxId: resolved.supplierTaxId,
       invoiceNumber: resolved.invoiceNumber,
-      totalAmount: resolved.totalAmount,
+      totalAmount: normalizedTotal,
       currency: resolved.currency,
       issueDate: issueDateIso,
     }),

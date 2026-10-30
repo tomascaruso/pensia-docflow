@@ -1,0 +1,2587 @@
+{
+  "provider": "openai",
+  "modelVersion": "gpt-4o-mini",
+  "stoppedByCap": null,
+  "docs": [
+    {
+      "docId": "ds-amb-01",
+      "category": "ambiguous",
+      "fields": {
+        "supplier_name": "Librería Austral S.A.",
+        "supplier_tax_id": "30-67890123-4",
+        "invoice_number": "0001-00001222",
+        "issue_date": "2026-02-28",
+        "currency": "ARS",
+        "total_amount": "60000.00"
+      },
+      "lines": [
+        {
+          "description": "Libros",
+          "quantity": "20",
+          "unitPrice": "3000.00",
+          "lineTotal": "60000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 3726,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-amb-02",
+      "category": "ambiguous",
+      "fields": {
+        "supplier_name": "Tecnología Río S.A.",
+        "supplier_tax_id": "30-90123456-7",
+        "invoice_number": "0001-00006666",
+        "issue_date": "2026-04-03",
+        "currency": "ARS",
+        "total_amount": "120000.00"
+      },
+      "lines": [
+        {
+          "description": "Licencias",
+          "quantity": "4",
+          "unitPrice": "30000.00",
+          "lineTotal": "120000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 3046,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-amounts-01",
+      "category": "amounts",
+      "fields": {
+        "supplier_name": "Alimentos del Centro S.A.",
+        "supplier_tax_id": "30-89012345-6",
+        "invoice_number": "0001-000003030",
+        "issue_date": "2026-03-18",
+        "currency": "ARS",
+        "total_amount": "34000.00"
+      },
+      "lines": [
+        {
+          "description": "Alimentos",
+          "quantity": "30",
+          "unitPrice": "1100.00",
+          "lineTotal": "33000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2276,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-amounts-02",
+      "category": "amounts",
+      "fields": {
+        "supplier_name": "Tecnología Río S.A.",
+        "supplier_tax_id": "30-90123456-7",
+        "invoice_number": "0001-00004040",
+        "issue_date": "2026-02-14",
+        "currency": "ARS",
+        "total_amount": "119000.00"
+      },
+      "lines": [
+        {
+          "description": "Licencias",
+          "quantity": "4",
+          "unitPrice": "30000.00",
+          "lineTotal": "120000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2702,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-amounts-03",
+      "category": "amounts",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": "0001-00005050",
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "12345.678"
+      },
+      "lines": [
+        {
+          "description": "Servicio preciso",
+          "quantity": "3",
+          "unitPrice": "4115.226",
+          "lineTotal": "12345.678"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2311,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-amounts-04",
+      "category": "amounts",
+      "fields": {
+        "supplier_name": "Distribuidora del Sur S.A.",
+        "supplier_tax_id": "30-23456789-0",
+        "invoice_number": "0002-00006060",
+        "issue_date": "2026-03-05",
+        "currency": "ARS",
+        "total_amount": "9876.5432"
+      },
+      "lines": [
+        {
+          "description": "Flete preciso",
+          "quantity": "2",
+          "unitPrice": "4938.2716",
+          "lineTotal": "9876.5432"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2438,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-amounts-05",
+      "category": "amounts",
+      "fields": {
+        "supplier_name": "Comercial Norte S.R.L.",
+        "supplier_tax_id": "30-34567890-1",
+        "invoice_number": "0001-00007070",
+        "issue_date": "2026-01-20",
+        "currency": "ARS",
+        "total_amount": "1000.005"
+      },
+      "lines": [
+        {
+          "description": "Ajuste",
+          "quantity": "1",
+          "unitPrice": "1000.005",
+          "lineTotal": "1000.005"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2961,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-amounts-06",
+      "category": "amounts",
+      "fields": {
+        "supplier_name": "Servicios del Litoral S.A.",
+        "supplier_tax_id": "30-45678901-2",
+        "invoice_number": "0003-000008080",
+        "issue_date": "2026-04-15",
+        "currency": "USD",
+        "total_amount": "250.1250"
+      },
+      "lines": [
+        {
+          "description": "Consultoría precisa",
+          "quantity": "1",
+          "unitPrice": "250.1250",
+          "lineTotal": "250.1250"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2376,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-01",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": "0001-00001234",
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "121000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 3354,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-02",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Distribuidora del Sur S.A.",
+        "supplier_tax_id": "30-23456789-0",
+        "invoice_number": "0002-00004567",
+        "issue_date": "2026-03-05",
+        "currency": "ARS",
+        "total_amount": "85000.00"
+      },
+      "lines": [
+        {
+          "description": "Flete zona sur",
+          "quantity": "2",
+          "unitPrice": "30000.00",
+          "lineTotal": "60000.00"
+        },
+        {
+          "description": "Peaje",
+          "quantity": "1",
+          "unitPrice": "25000.00",
+          "lineTotal": "25000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2721,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-03",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Comercial Norte S.R.L.",
+        "supplier_tax_id": "30-34567890-1",
+        "invoice_number": "0001-00007890",
+        "issue_date": "2026-01-20",
+        "currency": "ARS",
+        "total_amount": "45200.50"
+      },
+      "lines": [
+        {
+          "description": "Mercadería general",
+          "quantity": "10",
+          "unitPrice": "4520.05",
+          "lineTotal": "45200.50"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2314,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-04",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Servicios del Litoral S.A.",
+        "supplier_tax_id": "30-45678901-2",
+        "invoice_number": "0003-00001111",
+        "issue_date": "2026-04-15",
+        "currency": "ARS",
+        "total_amount": "99000.00"
+      },
+      "lines": [
+        {
+          "description": "Consultoría",
+          "quantity": "3",
+          "unitPrice": "33000.00",
+          "lineTotal": "99000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2334,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-05",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Librería Austral S.A.",
+        "supplier_tax_id": "30-67890123-4",
+        "invoice_number": "0001-00002222",
+        "issue_date": "2026-02-28",
+        "currency": "ARS",
+        "total_amount": "60000.00"
+      },
+      "lines": [
+        {
+          "description": "Libros",
+          "quantity": "20",
+          "unitPrice": "3000.00",
+          "lineTotal": "60000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2366,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-06",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Metálúrgica Pampeana S.R.L.",
+        "supplier_tax_id": "30-78901234-5",
+        "invoice_number": "0004-00003333",
+        "issue_date": "2026-05-10",
+        "currency": "ARS",
+        "total_amount": "77000.00"
+      },
+      "lines": [
+        {
+          "description": "Estructuras",
+          "quantity": "7",
+          "unitPrice": "11000.00",
+          "lineTotal": "77000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2411,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-07",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Alimentos del Centro S.A.",
+        "supplier_tax_id": "30-89012345-6",
+        "invoice_number": "0001-00004444",
+        "issue_date": "2026-03-18",
+        "currency": "ARS",
+        "total_amount": "33000.00"
+      },
+      "lines": [
+        {
+          "description": "Alimentos",
+          "quantity": "30",
+          "unitPrice": "1100.00",
+          "lineTotal": "33000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2402,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-08",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Distribuidora del Sur S.A.",
+        "supplier_tax_id": "30-23456789-0",
+        "invoice_number": "0002-00005555",
+        "issue_date": "2026-06-01",
+        "currency": "ARS",
+        "total_amount": "41000.00"
+      },
+      "lines": [
+        {
+          "description": "Distribución",
+          "quantity": "1",
+          "unitPrice": "41000.00",
+          "lineTotal": "41000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2433,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-09",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Tecnología Río S.A.",
+        "supplier_tax_id": "30-90123456-7",
+        "invoice_number": "0001-00006666",
+        "issue_date": "2026-02-14",
+        "currency": "ARS",
+        "total_amount": "120000.00"
+      },
+      "lines": [
+        {
+          "description": "Licencias",
+          "quantity": "4",
+          "unitPrice": "30000.00",
+          "lineTotal": "120000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2466,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-10",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "PENSIA S.A.",
+        "supplier_tax_id": "30-567890912-3",
+        "invoice_number": "0001-00007777",
+        "issue_date": "2026-07-07",
+        "currency": "ARS",
+        "total_amount": "55000.00"
+      },
+      "lines": [
+        {
+          "description": "Asesoría",
+          "quantity": "5",
+          "unitPrice": "11000.00",
+          "lineTotal": "55000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2235,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-11",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Transportes Andinos S.A.",
+        "supplier_tax_id": "30-01234567-8",
+        "invoice_number": "0005-00008888",
+        "issue_date": "2026-04-22",
+        "currency": "USD",
+        "total_amount": "1500.00"
+      },
+      "lines": [
+        {
+          "description": "Transporte",
+          "quantity": "1",
+          "unitPrice": "1500.00",
+          "lineTotal": "1500.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2777,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-12",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Gráfica del Oeste S.R.L.",
+        "supplier_tax_id": "30-12345679-0",
+        "invoice_number": "0001-00009999",
+        "issue_date": "2026-05-30",
+        "currency": "ARS",
+        "total_amount": "21000.00"
+      },
+      "lines": [
+        {
+          "description": "Item 1",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 2",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 3",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 4",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 5",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 6",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 7",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 8",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 9",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 10",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 11",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 12",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 13",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 14",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "concepto 1",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 2",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 3",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 4",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 5",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 6",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 7",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 8",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 9518,
+      "pages": 2,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-13",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Comercial Norte S.R.L.",
+        "supplier_tax_id": "30-34567890-1",
+        "invoice_number": "0001-00001010",
+        "issue_date": "2026-06-20",
+        "currency": "ARS",
+        "total_amount": "18000.00"
+      },
+      "lines": [
+        {
+          "description": "Item 1",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 2",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 3",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 4",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 5",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 6",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 7",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 8",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 9",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 10",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 11",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 12",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 13",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 14",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 15",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "concepto 1",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 2",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 3",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 4",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 5",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 6",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 7",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 8",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 9925,
+      "pages": 2,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-clean-14",
+      "category": "clean",
+      "fields": {
+        "supplier_name": "Servicios del Litoral S.A.",
+        "supplier_tax_id": "30-45678901-2",
+        "invoice_number": "0003-00002020",
+        "issue_date": "2026-07-01",
+        "currency": "ARS",
+        "total_amount": "24000.00"
+      },
+      "lines": [
+        {
+          "description": "Item 1",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 2",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 3",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 4",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 5",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 6",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 7",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 8",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 9",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 10",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 11",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 12",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 13",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 14",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 15",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 16",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "concepto 1",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 2",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 3",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 4",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 5",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 6",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 7",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 8",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 10282,
+      "pages": 2,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-b01",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": "0001-00001234",
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "121000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "2100.00",
+          "lineTotal": "2100.00"
+        },
+        {
+          "description": "concepto 1",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 2",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 3",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 4",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 5",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 6",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 7",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 8",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 6378,
+      "pages": 2,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-b02",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Distribuidora del Sur S.A.",
+        "supplier_tax_id": "30-23456789-0",
+        "invoice_number": "0002-00004567",
+        "issue_date": "2026-03-05",
+        "currency": "ARS",
+        "total_amount": "85000.00"
+      },
+      "lines": [
+        {
+          "description": "Flete zona sur",
+          "quantity": "2",
+          "unitPrice": "30000.00",
+          "lineTotal": "60000.00"
+        },
+        {
+          "description": "Peaje",
+          "quantity": "1",
+          "unitPrice": "25000.00",
+          "lineTotal": "25000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2635,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-b03",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Comercial Norte S.R.L.",
+        "supplier_tax_id": null,
+        "invoice_number": "0001-00007890",
+        "issue_date": "2026-01-20",
+        "currency": "ARS",
+        "total_amount": "45200.50"
+      },
+      "lines": [
+        {
+          "description": "Mercadería general",
+          "quantity": "10",
+          "unitPrice": "4520.05",
+          "lineTotal": "45200.50"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2289,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-b04",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Servicios del Litoral S.A.",
+        "supplier_tax_id": "30-45678901-2",
+        "invoice_number": "0003-00001111",
+        "issue_date": "2026-04-15",
+        "currency": "ARS",
+        "total_amount": "99000.01"
+      },
+      "lines": [
+        {
+          "description": "Consultoría",
+          "quantity": "3",
+          "unitPrice": "33000.00",
+          "lineTotal": "99000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2590,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-f01",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": "0001-00001234",
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "121000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2802,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-f02",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": "0001-00001234",
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "121000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2771,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-f03",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": "0001-00001234",
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "121000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2905,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-f04",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Librería Austral S.A.",
+        "supplier_tax_id": "30-67890123-4",
+        "invoice_number": "0001-00002222",
+        "issue_date": "2026-02-28",
+        "currency": "ARS",
+        "total_amount": "121000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2640,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-n01",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Distribuidora del Norte S.A.",
+        "supplier_tax_id": "30-87654321-0",
+        "invoice_number": "0004-00003333",
+        "issue_date": "2026-05-10",
+        "currency": "ARS",
+        "total_amount": "77000.00"
+      },
+      "lines": [
+        {
+          "description": "Estructuras",
+          "quantity": "7",
+          "unitPrice": "11000.00",
+          "lineTotal": "77000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 3602,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-n02",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Distribuidora Sur S.A.",
+        "supplier_tax_id": "30-23456789-0",
+        "invoice_number": "0002-00005555",
+        "issue_date": "2026-06-01",
+        "currency": "ARS",
+        "total_amount": "41000.00"
+      },
+      "lines": [
+        {
+          "description": "Distribución",
+          "quantity": "1",
+          "unitPrice": "41000.00",
+          "lineTotal": "41000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 4275,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-n03",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "pensia sa",
+        "supplier_tax_id": "30-56789012-3",
+        "invoice_number": "0001-00007777",
+        "issue_date": "2026-07-07",
+        "currency": "ARS",
+        "total_amount": "55000.00"
+      },
+      "lines": [
+        {
+          "description": "Asesoría",
+          "quantity": "5",
+          "unitPrice": "11000.00",
+          "lineTotal": "55000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2349,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-dup-p01",
+      "category": "dup",
+      "fields": {
+        "supplier_name": "Tecnología Río S.A.",
+        "supplier_tax_id": "30-90123456-7",
+        "invoice_number": "0001-00006666",
+        "issue_date": "2026-02-14",
+        "currency": "ARS",
+        "total_amount": "135000.00"
+      },
+      "lines": [
+        {
+          "description": "Licencias",
+          "quantity": "4",
+          "unitPrice": "33750.00",
+          "lineTotal": "135000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2415,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-exact-01",
+      "category": "exact",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": "0001-00001234",
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "121000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2966,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-exact-02",
+      "category": "exact",
+      "fields": {
+        "supplier_name": "Distribuidora del Sur S.A.",
+        "supplier_tax_id": "30-23456789-0",
+        "invoice_number": "0002-00004567",
+        "issue_date": "2026-03-05",
+        "currency": "ARS",
+        "total_amount": "85000.00"
+      },
+      "lines": [
+        {
+          "description": "Flete zona sur",
+          "quantity": "2",
+          "unitPrice": "30000.00",
+          "lineTotal": "60000.00"
+        },
+        {
+          "description": "Peaje",
+          "quantity": "1",
+          "unitPrice": "25000.00",
+          "lineTotal": "25000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 3054,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-exact-03",
+      "category": "exact",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": "0001-00009090",
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "146410.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 3159,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-exact-04",
+      "category": "exact",
+      "fields": {
+        "supplier_name": "Comercial Norte S.R.L.",
+        "supplier_tax_id": "30-34567890-1",
+        "invoice_number": "0001-00007890",
+        "issue_date": "2026-01-20",
+        "currency": "ARS",
+        "total_amount": "45200.50"
+      },
+      "lines": [
+        {
+          "description": "Mercadería general",
+          "quantity": "10",
+          "unitPrice": "4520.05",
+          "lineTotal": "45200.50"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2393,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-missing-01",
+      "category": "missing",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": null,
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "121000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2935,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-missing-02",
+      "category": "missing",
+      "fields": {
+        "supplier_name": "Distribuidora del Sur S.A.",
+        "supplier_tax_id": "30-23456789-0",
+        "invoice_number": "0002-00004567",
+        "issue_date": null,
+        "currency": "ARS",
+        "total_amount": "85000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2523,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-missing-03",
+      "category": "missing",
+      "fields": {
+        "supplier_name": "Comercial Norte S.R.L.",
+        "supplier_tax_id": null,
+        "invoice_number": "0001-00007890",
+        "issue_date": "2026-01-20",
+        "currency": "ARS",
+        "total_amount": "45200.50"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2546,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-missing-04",
+      "category": "missing",
+      "fields": {
+        "supplier_name": "Servicios del Litoral S.A.",
+        "supplier_tax_id": "30-45678901-2",
+        "invoice_number": "0003-00001111",
+        "issue_date": "2026-04-15",
+        "currency": null,
+        "total_amount": "99000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2847,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-missing-05",
+      "category": "missing",
+      "fields": {
+        "supplier_name": "Librería Austral S.A.",
+        "supplier_tax_id": "30-67890123-4",
+        "invoice_number": "0001-00002222",
+        "issue_date": "2026-02-28",
+        "currency": "ARS",
+        "total_amount": "121000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2914,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-missing-06",
+      "category": "missing",
+      "fields": {
+        "supplier_name": null,
+        "supplier_tax_id": "30-78901234-5",
+        "invoice_number": "0004-00003333",
+        "issue_date": "2026-05-10",
+        "currency": "ARS",
+        "total_amount": "77000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2593,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-prob-01",
+      "category": "probable",
+      "fields": {
+        "supplier_name": "Librería Austral S.A.",
+        "supplier_tax_id": "30-67890123-4",
+        "invoice_number": "0001-00002222",
+        "issue_date": "2026-02-28",
+        "currency": "ARS",
+        "total_amount": "65000.00"
+      },
+      "lines": [
+        {
+          "description": "Libros",
+          "quantity": "20",
+          "unitPrice": "3250.00",
+          "lineTotal": "65000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2524,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-prob-02",
+      "category": "probable",
+      "fields": {
+        "supplier_name": "Metálúrgica Pampeana S.R.L.",
+        "supplier_tax_id": "30-78901234-5",
+        "invoice_number": "0004-00003333",
+        "issue_date": "2026-05-11",
+        "currency": "ARS",
+        "total_amount": "77000.00"
+      },
+      "lines": [
+        {
+          "description": "Estructuras",
+          "quantity": "7",
+          "unitPrice": "11000.00",
+          "lineTotal": "77000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2623,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-prob-03",
+      "category": "probable",
+      "fields": {
+        "supplier_name": "Alimentos del Centro S.A.",
+        "supplier_tax_id": "30-89012345-6",
+        "invoice_number": "0001-00004445",
+        "issue_date": "2026-03-18",
+        "currency": "ARS",
+        "total_amount": "33000.00"
+      },
+      "lines": [
+        {
+          "description": "Alimentos",
+          "quantity": "30",
+          "unitPrice": "1100.00",
+          "lineTotal": "33000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2240,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-prob-04",
+      "category": "probable",
+      "fields": {
+        "supplier_name": "PENSIA S.A.",
+        "supplier_tax_id": "30-567890912-3",
+        "invoice_number": "0001-00007777",
+        "issue_date": "2026-07-07",
+        "currency": "ARS",
+        "total_amount": "55000.00"
+      },
+      "lines": [
+        {
+          "description": "Asesoría",
+          "quantity": "5",
+          "unitPrice": "11000.00",
+          "lineTotal": "55000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2185,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-scan-01",
+      "category": "scan",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": "0001-00001234",
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "121000.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 3123,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-scan-02",
+      "category": "scan",
+      "fields": {
+        "supplier_name": "Distribuidora del Sur S.A.",
+        "supplier_tax_id": "30-23456789-0",
+        "invoice_number": "0002-00004567",
+        "issue_date": "2026-03-05",
+        "currency": "ARS",
+        "total_amount": "85000.00"
+      },
+      "lines": [
+        {
+          "description": "Flete zona sur",
+          "quantity": "2",
+          "unitPrice": "30000.00",
+          "lineTotal": "60000.00"
+        },
+        {
+          "description": "Paje",
+          "quantity": "1",
+          "unitPrice": "25000.00",
+          "lineTotal": "25000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2615,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-scan-03",
+      "category": "scan",
+      "fields": {
+        "supplier_name": "Comercial Norte S.R.L.",
+        "supplier_tax_id": "30-34567890-1",
+        "invoice_number": "0001-00007890",
+        "issue_date": "2026-01-20",
+        "currency": "ARS",
+        "total_amount": "45200.50"
+      },
+      "lines": [
+        {
+          "description": "Mercadería general",
+          "quantity": "10",
+          "unitPrice": "4520.05",
+          "lineTotal": "45200.50"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2696,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-scan-04",
+      "category": "scan",
+      "fields": {
+        "supplier_name": "Servicios del Litoral S.A.",
+        "supplier_tax_id": "30-45678901-2",
+        "invoice_number": "0003-00001111",
+        "issue_date": "2026-04-15",
+        "currency": "ARS",
+        "total_amount": "99000.00"
+      },
+      "lines": [
+        {
+          "description": "Consultoría",
+          "quantity": "3",
+          "unitPrice": "33000.00",
+          "lineTotal": "99000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2384,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-tax-01",
+      "category": "tax",
+      "fields": {
+        "supplier_name": "Proveedor Ficticio Uno S.A.",
+        "supplier_tax_id": "30-12345678-9",
+        "invoice_number": "0001-00009090",
+        "issue_date": "2026-02-10",
+        "currency": "ARS",
+        "total_amount": "146410.00"
+      },
+      "lines": [
+        {
+          "description": "Servicio A",
+          "quantity": "1",
+          "unitPrice": "100000.00",
+          "lineTotal": "100000.00"
+        },
+        {
+          "description": "Servicio B",
+          "quantity": "1",
+          "unitPrice": "21000.00",
+          "lineTotal": "21000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2722,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-tax-02",
+      "category": "tax",
+      "fields": {
+        "supplier_name": "Distribuidora del Sur S.A.",
+        "supplier_tax_id": "30-23456789-0",
+        "invoice_number": "0002-00009191",
+        "issue_date": "2026-03-05",
+        "currency": "ARS",
+        "total_amount": "93925.00"
+      },
+      "lines": [
+        {
+          "description": "Flete",
+          "quantity": "1",
+          "unitPrice": "85000.00",
+          "lineTotal": "85000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2738,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-tax-03",
+      "category": "tax",
+      "fields": {
+        "supplier_name": "Comercial Norte S.R.L.",
+        "supplier_tax_id": "30-34567890-1",
+        "invoice_number": "0001-00009292",
+        "issue_date": "2026-01-20",
+        "currency": "ARS",
+        "total_amount": "45200.50"
+      },
+      "lines": [
+        {
+          "description": "Mercadería exenta",
+          "quantity": "10",
+          "unitPrice": "4520.05",
+          "lineTotal": "45200.50"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2597,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-tax-04",
+      "category": "tax",
+      "fields": {
+        "supplier_name": "Servicios del Litoral S.A.",
+        "supplier_tax_id": "30-45678901-2",
+        "invoice_number": "0003-00009393",
+        "issue_date": "2026-04-15",
+        "currency": "USD",
+        "total_amount": "1200.00"
+      },
+      "lines": [
+        {
+          "description": "Consultoría",
+          "quantity": "3",
+          "unitPrice": "400.00",
+          "lineTotal": "1200.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2637,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-tax-05",
+      "category": "tax",
+      "fields": {
+        "supplier_name": "Librería Austral S.A.",
+        "supplier_tax_id": "30-67890123-4",
+        "invoice_number": "0001-00009494",
+        "issue_date": "2026-02-28",
+        "currency": "MXN",
+        "total_amount": "15000.00"
+      },
+      "lines": [
+        {
+          "description": "Libros",
+          "quantity": "50",
+          "unitPrice": "300.00",
+          "lineTotal": "15000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2451,
+      "pages": 1,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-tax-06",
+      "category": "tax",
+      "fields": {
+        "supplier_name": "Metalúrgica Pampeana S.R.L.",
+        "supplier_tax_id": "30-78901234-5",
+        "invoice_number": "0004-00009595",
+        "issue_date": "2026-05-10",
+        "currency": "ARS",
+        "total_amount": "77000.00"
+      },
+      "lines": [
+        {
+          "description": "Item 1",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 2",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 3",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 4",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 5",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 6",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 7",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 8",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 9",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 10",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 11",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 12",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 13",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 14",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 15",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 16",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 17",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 18",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 19",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 20",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 21",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 22",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "concepto 1",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 2",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 3",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 4",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 5",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 6",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 7",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 8",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 1",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 2",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 3",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 4",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 5",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 6",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 7",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 8",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 15248,
+      "pages": 3,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-tax-07",
+      "category": "tax",
+      "fields": {
+        "supplier_name": "Alimentos del Centro S.A.",
+        "supplier_tax_id": "30-89012345-6",
+        "invoice_number": "0001-00009696",
+        "issue_date": "2026-03-18",
+        "currency": "ARS",
+        "total_amount": "33000.00"
+      },
+      "lines": [
+        {
+          "description": "Item 1",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 2",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 3",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 4",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 5",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 6",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 7",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 8",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 9",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 10",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 11",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 12",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 13",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 14",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 15",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 16",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 17",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 18",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 19",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 20",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 21",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 22",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 23",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "Item 24",
+          "quantity": "1",
+          "unitPrice": "1000.00",
+          "lineTotal": "1000.00"
+        },
+        {
+          "description": "concepto 1",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 2",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 3",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 4",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 5",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 6",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 7",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 8",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 1",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 2",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 3",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 4",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 5",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 6",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 7",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        },
+        {
+          "description": "concepto 8",
+          "quantity": null,
+          "unitPrice": null,
+          "lineTotal": null
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 18954,
+      "pages": 3,
+      "attempts": 1
+    },
+    {
+      "docId": "ds-tax-08",
+      "category": "tax",
+      "fields": {
+        "supplier_name": "Tecnología Río S.A.",
+        "supplier_tax_id": "30-90123456-7",
+        "invoice_number": "0001-00009797",
+        "issue_date": "2026-02-14",
+        "currency": "ARS",
+        "total_amount": "120000.00"
+      },
+      "lines": [
+        {
+          "description": "Licencias",
+          "quantity": "4",
+          "unitPrice": "30000.00",
+          "lineTotal": "120000.00"
+        }
+      ],
+      "reviewNeeded": true,
+      "failed": false,
+      "failureCause": null,
+      "latencyMs": 2693,
+      "pages": 1,
+      "attempts": 1
+    }
+  ]
+}

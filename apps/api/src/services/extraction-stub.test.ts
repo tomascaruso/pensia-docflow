@@ -1,13 +1,17 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
-  createExtractionProviderFromEnv,
   createStubExtractionProvider,
-  resolveExtractionProvider,
   selectStubFixture,
   selectStubFixtureIndex,
   STUB_FIXTURES,
 } from "./extraction-stub.js";
+import {
+  createExtractionProviderFromEnv,
+  resolveExtractionProvider,
+} from "./extraction-registry.js";
+
+const readFile = async (): Promise<Uint8Array> => new Uint8Array();
 
 describe("extraction-stub", () => {
   it("name y modelVersion son stub / stub-1", () => {
@@ -79,37 +83,24 @@ describe("extraction-stub", () => {
     expect(jpg).toEqual(png);
   });
 
-  it("EXTRACTION_PROVIDER distinto de stub falla rápido", () => {
-    const prev = process.env.EXTRACTION_PROVIDER;
-    process.env.EXTRACTION_PROVIDER = "azure";
-    try {
-      expect(() =>
-        createExtractionProviderFromEnv(async () => new Uint8Array()),
-      ).toThrow("Proveedor de extracción desconocido");
-      expect(() =>
-        resolveExtractionProvider("google", async () => new Uint8Array()),
-      ).toThrow("Proveedor de extracción desconocido");
-    } finally {
-      if (prev === undefined) {
-        delete process.env.EXTRACTION_PROVIDER;
-      } else {
-        process.env.EXTRACTION_PROVIDER = prev;
-      }
-    }
+  it("nombre desconocido falla rápido (sin fallback al stub)", () => {
+    expect(() => resolveExtractionProvider("proveedor-inventado", { readFile }, {})).toThrow(
+      "Proveedor de extracción desconocido",
+    );
+    expect(() =>
+      createExtractionProviderFromEnv({ readFile }, { EXTRACTION_PROVIDER: "proveedor-inventado" }),
+    ).toThrow("Proveedor de extracción desconocido");
+  });
+
+  it("proveedor pago sin credenciales falla rápido (sin fallback al stub)", () => {
+    expect(() => resolveExtractionProvider("azure", { readFile }, {})).toThrow("sin credenciales");
+    expect(() => resolveExtractionProvider("google", { readFile }, {})).toThrow("sin credenciales");
+    expect(() => resolveExtractionProvider("mistral", { readFile }, {})).toThrow("sin credenciales");
+    expect(() => resolveExtractionProvider("aws", { readFile }, {})).toThrow("sin configuración");
   });
 
   it("sin EXTRACTION_PROVIDER el default es stub", () => {
-    const prev = process.env.EXTRACTION_PROVIDER;
-    delete process.env.EXTRACTION_PROVIDER;
-    try {
-      const provider = createExtractionProviderFromEnv(
-        async () => new Uint8Array(),
-      );
-      expect(provider.name).toBe("stub");
-    } finally {
-      if (prev !== undefined) {
-        process.env.EXTRACTION_PROVIDER = prev;
-      }
-    }
+    const provider = createExtractionProviderFromEnv({ readFile }, {});
+    expect(provider.name).toBe("stub");
   });
 });
