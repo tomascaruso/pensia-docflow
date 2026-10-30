@@ -41,6 +41,9 @@ import { registerRetryRoutes } from "./routes/retry.js";
 import { registerDuplicateCandidateRoutes } from "./routes/duplicate-candidates.js";
 import { registerDocumentsFileRoutes } from "./routes/documents-file.js";
 import { registerExportRoutes } from "./routes/exports.js";
+import { registerDocumentsReadRoutes } from "./routes/documents-read.js";
+import { registerAuditEventRoutes } from "./routes/audit-events.js";
+import { registerSummaryRoutes } from "./routes/summary.js";
 import {
   MAX_FILE_BYTES,
   type UploadStoragePort,
@@ -134,6 +137,18 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       storage: options.storage,
     });
     registerExportRoutes(app, {
+      db: options.db,
+      auth: options.auth,
+    });
+    registerDocumentsReadRoutes(app, {
+      db: options.db,
+      auth: options.auth,
+    });
+    registerAuditEventRoutes(app, {
+      db: options.db,
+      auth: options.auth,
+    });
+    registerSummaryRoutes(app, {
       db: options.db,
       auth: options.auth,
     });

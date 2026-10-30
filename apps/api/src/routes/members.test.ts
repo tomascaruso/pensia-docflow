@@ -247,3 +247,53 @@ describe("PATCH /organizations/:id/members/:userId/role", () => {
     await adminApp.app.close();
   });
 });
+
+describe("GET /organizations/:id/members con perfiles (F0)", () => {
+  it("incluye name y email; miembro sin fila en user → nulls", async () => {
+    const { app } = buildTestApp(REVIEWER, (t) => {
+      seedMember(t, "org-01", "admin-01", "org_admin");
+      seedMember(t, "org-01", "rev-01", "reviewer");
+      seedMember(t, "org-01", "ghost-01", "reviewer");
+      t.get(authTables.user)?.push({
+        id: "admin-01",
+        name: "María",
+        email: "admin@example.com",
+        emailVerified: false,
+        image: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+      t.get(authTables.user)?.push({
+        id: "rev-01",
+        name: "Juan",
+        email: "rev@example.com",
+        emailVerified: false,
+        image: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+    });
+    await app.ready();
+    const res = await app.inject({
+      method: "GET",
+      url: "/organizations/org-01/members",
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      members: Array<{
+        userId: string;
+        name: string | null;
+        email: string | null;
+      }>;
+    };
+    const profiles = body.members
+      .map((m) => ({ userId: m.userId, name: m.name, email: m.email }))
+      .sort((a, b) => (a.userId < b.userId ? -1 : 1));
+    expect(profiles).toEqual([
+      { userId: "admin-01", name: "María", email: "admin@example.com" },
+      { userId: "ghost-01", name: null, email: null },
+      { userId: "rev-01", name: "Juan", email: "rev@example.com" },
+    ]);
+    await app.close();
+  });
+});

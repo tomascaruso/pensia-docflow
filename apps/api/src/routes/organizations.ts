@@ -50,7 +50,15 @@ import {
   writeAuditEvent,
 } from "../db/audit-writer.js";
 import type { PermissionAudit } from "../db/permission-service.js";
+import { createDrizzleMembershipRepository } from "../db/permission-drizzle.js";
+import {
+  findOrganizationById,
+  listOrganizationsOfUser,
+  serializeOrganization,
+} from "../db/read-drizzle.js";
 import { getSession } from "../auth/session.js";
+import { createDrizzlePluginMemberRepository } from "../middleware/require-membership.js";
+import { requireMembership } from "../middleware/require-membership.js";
 import { requireSession } from "../middleware/require-session.js";
 import {
   requirePlatformAdmin,
@@ -272,6 +280,72 @@ export function registerOrganizationRoutes(
         createdAt: result.createdAt.toISOString(),
         membership: { userId: user.id, role: "org_admin" },
       });
+    },
+  );
+
+  const dbAudit = (input: Parameters<typeof writeAuditEvent>[1]) =>
+    writeAuditEvent(
+      {
+        resolver: createDrizzleAuditOrganizationResolver(deps.db),
+        store: createDrizzleAuditEventStore(deps.db),
+      },
+      input,
+    );
+  const session = requireSession((request) => getSession(deps.auth, request));
+  const membership = requireMembership({
+    memberships: createDrizzleMembershipRepository(deps.db),
+    pluginMembers: createDrizzlePluginMemberRepository(deps.db),
+    audit: dbAudit,
+    getOrgId: (request) =>
+      (request.params as { id?: string }).id,
+  });
+
+  app.get(
+    "/organizations/:id",
+    { preHandler: [session, membership] },
+    async (request, reply) => {
+      const user = request.user;
+      if (!user) {
+        return reply.code(401).send({
+          error: "unauthorized",
+          message: "Sesión requerida.",
+        });
+      }
+      const organizationId = (request.params as { id?: string }).id;
+      if (organizationId === undefined) {
+        return reply.code(404).send({
+          error: "not_found",
+          message: "Recurso no encontrado.",
+        });
+      }
+      const org = await findOrganizationById(deps.db, organizationId);
+      if (org === null) {
+        return reply.code(404).send({
+          error: "not_found",
+          message: "Recurso no encontrado.",
+        });
+      }
+      const role = request.membership?.role;
+      return reply.code(200).send({
+        ...serializeOrganization(org),
+        membership: { role: role ?? null },
+      });
+    },
+  );
+
+  app.get(
+    "/me/organizations",
+    { preHandler: [session] },
+    async (request, reply) => {
+      const user = request.user;
+      if (!user) {
+        return reply.code(401).send({
+          error: "unauthorized",
+          message: "Sesión requerida.",
+        });
+      }
+      const organizations = await listOrganizationsOfUser(deps.db, user.id);
+      return reply.code(200).send({ organizations });
     },
   );
 }

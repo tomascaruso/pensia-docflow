@@ -35,6 +35,10 @@ import {
 } from "../db/duplicate-candidate-service.js";
 import { createCandidateServiceDeps } from "../db/duplicate-candidate-drizzle.js";
 import { createDrizzleMembershipRepository } from "../db/permission-drizzle.js";
+import {
+  listCandidatesOfOrg,
+  serializeCandidate,
+} from "../db/read-drizzle.js";
 import { createDrizzlePluginMemberRepository } from "../middleware/require-membership.js";
 import { requireMembership } from "../middleware/require-membership.js";
 import { requireSession } from "../middleware/require-session.js";
@@ -56,6 +60,67 @@ function getCandidateId(request: FastifyRequest): string | undefined {
   return (request.params as { candidateId?: string }).candidateId;
 }
 
+const CANDIDATE_LIST_MAX_LIMIT = 100;
+
+interface CandidateListQuery {
+  limit: number;
+  offset: number;
+  status?: string;
+  kind?: string;
+  onlyPendingEffective: boolean;
+}
+
+function parseCandidateListQuery(query: unknown): CandidateListQuery | null {
+  const q = (query ?? {}) as Record<string, unknown>;
+  let limit = 25;
+  if (q["limit"] !== undefined) {
+    const parsed = Number.parseInt(String(q["limit"]), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return null;
+    }
+    limit = Math.min(parsed, CANDIDATE_LIST_MAX_LIMIT);
+  }
+  let offset = 0;
+  if (q["offset"] !== undefined) {
+    const parsed = Number.parseInt(String(q["offset"]), 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return null;
+    }
+    offset = parsed;
+  }
+  let status: string | undefined;
+  if (q["status"] !== undefined) {
+    if (
+      typeof q["status"] !== "string" ||
+      !["pending", "distinct", "duplicate", "overridden"].includes(q["status"])
+    ) {
+      return null;
+    }
+    status = q["status"];
+  }
+  let kind: string | undefined;
+  if (q["kind"] !== undefined) {
+    if (
+      typeof q["kind"] !== "string" ||
+      !["business_exact", "business_probable"].includes(q["kind"])
+    ) {
+      return null;
+    }
+    kind = q["kind"];
+  }
+  let onlyPendingEffective = true;
+  if (q["onlyPendingEffective"] !== undefined) {
+    if (q["onlyPendingEffective"] === "true") {
+      onlyPendingEffective = true;
+    } else if (q["onlyPendingEffective"] === "false") {
+      onlyPendingEffective = false;
+    } else {
+      return null;
+    }
+  }
+  return { limit, offset, status, kind, onlyPendingEffective };
+}
+
 export function registerDuplicateCandidateRoutes(
   app: FastifyInstance,
   deps: RegisterDuplicateCandidateRoutesDeps,
@@ -75,6 +140,39 @@ export function registerDuplicateCandidateRoutes(
     audit: dbAudit,
     getOrgId,
   });
+
+  app.get(
+    "/organizations/:orgId/duplicate-candidates",
+    { preHandler: [session, membership] },
+    async (request, reply: FastifyReply) => {
+      const user = request.user;
+      const orgId = getOrgId(request);
+      if (!user || orgId === undefined) {
+        return reply.code(401).send({
+          error: "unauthorized",
+          message: "Sesión requerida.",
+        });
+      }
+      const parsed = parseCandidateListQuery(request.query);
+      if (parsed === null) {
+        return reply.code(400).send({
+          error: "invalid_request",
+          message: "parámetros de listado inválidos.",
+        });
+      }
+      const { rows, total } = await listCandidatesOfOrg(
+        deps.db,
+        orgId,
+        parsed,
+      );
+      return reply.send({
+        candidates: rows.map((row) => serializeCandidate(row)),
+        total,
+        limit: parsed.limit,
+        offset: parsed.offset,
+      });
+    },
+  );
 
   app.post(
     "/organizations/:orgId/duplicate-candidates/:candidateId/resolve",
