@@ -15,6 +15,7 @@ import type {
   FastifyRequest,
 } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { SummaryResponse } from "@pensia-docflow/shared";
 import type { AuthSessionPort } from "../auth/session.js";
 import { getSession } from "../auth/session.js";
 import {
@@ -83,7 +84,7 @@ export function registerSummaryRoutes(
       if (orgId === undefined) {
         return notFound(reply);
       }
-      const summary = await summaryOfOrg(deps.db, orgId);
+      const summary: SummaryResponse = await summaryOfOrg(deps.db, orgId);
       return reply.send(summary);
     },
   );

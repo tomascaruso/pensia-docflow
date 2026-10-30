@@ -38,6 +38,11 @@ import type {
   FastifyRequest,
 } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type {
+  ExportCreateResponse,
+  ExportListResponse,
+  ExportStatus,
+} from "@pensia-docflow/shared";
 import type { AuthSessionPort } from "../auth/session.js";
 import { getSession } from "../auth/session.js";
 import {
@@ -242,9 +247,9 @@ export function registerExportRoutes(
       return reply.code(201).send({
         id: details.id,
         documentCount: details.documentCount,
-        status: details.status,
+        status: details.status as ExportStatus,
         createdAt: toIsoOrNull(details.createdAt),
-      });
+      } satisfies ExportCreateResponse);
     },
   );
 
@@ -317,7 +322,7 @@ export function registerExportRoutes(
         exports: rows.map((row) => ({
           id: row.id,
           documentCount: row.documentCount,
-          status: row.status,
+          status: row.status as ExportStatus,
           requestedBy: row.requestedBy,
           createdAt: toIsoOrNull(row.createdAt),
           completedAt: toIsoOrNull(row.completedAt),
@@ -325,7 +330,7 @@ export function registerExportRoutes(
         total,
         limit: parsed.limit,
         offset: parsed.offset,
-      });
+      } satisfies ExportListResponse);
     },
   );
 }

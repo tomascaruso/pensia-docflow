@@ -1,1 +1,54 @@
 @import "tailwindcss";
+
+/**
+ * Tokens de Misión 2 (normativos) + mapeo a los semánticos de shadcn/ui.
+ * Tailwind 4: cada --color-* genera su utilidad (bg-ground, text-muted…).
+ * Los componentes shadcn usan primary/secondary/muted/accent/destructive/
+ * input/ring; todos se resuelven contra esta paleta, no contra valores
+ * por defecto.
+ */
+@theme {
+  --color-ground: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-raised: #f6f7f9;
+  --color-active: #e4e7ec;
+  --color-text: #182230;
+  --color-muted: #667085;
+  --color-border: #e4e7ec;
+  --color-brand: #2447a8;
+  --color-positive: #067647;
+  --color-warning: #b54708;
+  --color-negative: #b42318;
+  --color-info: #175cd3;
+
+  /* Semánticos shadcn/ui → Misión 2 */
+  --color-background: #ffffff;
+  --color-foreground: #182230;
+  --color-primary: #2447a8;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f6f7f9;
+  --color-secondary-foreground: #182230;
+  --color-muted-foreground: #667085;
+  --color-accent: #f6f7f9;
+  --color-accent-foreground: #182230;
+  --color-destructive: #b42318;
+  --color-input: #e4e7ec;
+  --color-ring: #2447a8;
+
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-ground);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+  }
+}
+
+/** IDs, claves y cifras tabulares: Plex Mono, nunca la fuente de texto. */
+.tabular-ids {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

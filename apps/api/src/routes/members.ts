@@ -10,6 +10,7 @@ import type {
   FastifyRequest,
 } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { MembersResponse } from "@pensia-docflow/shared";
 import {
   createDrizzleAuditEventStore,
   createDrizzleAuditOrganizationResolver,
@@ -120,7 +121,7 @@ export function registerMemberRoutes(
             email: profile?.email ?? null,
           };
         }),
-      });
+      } satisfies MembersResponse);
     },
   );
 

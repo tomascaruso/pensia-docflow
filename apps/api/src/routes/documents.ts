@@ -32,6 +32,7 @@ import type {
   FastifyRequest,
 } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { UploadResponse } from "@pensia-docflow/shared";
 import type { AuthSessionPort } from "../auth/session.js";
 import { getSession } from "../auth/session.js";
 import {
@@ -189,7 +190,7 @@ export function registerDocumentRoutes(
             fileName: result.fileName,
             sizeBytes: result.sizeBytes,
             createdAt: result.createdAt.toISOString(),
-          });
+          } satisfies UploadResponse);
         } finally {
           stream.destroy();
         }

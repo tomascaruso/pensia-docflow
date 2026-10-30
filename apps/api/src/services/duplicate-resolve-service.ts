@@ -25,6 +25,10 @@ import {
   resolveCandidate,
   type DuplicateCandidateServiceDeps,
 } from "../db/duplicate-candidate-service.js";
+import type { CandidateStatus } from "@pensia-docflow/shared";
+import type { ResolveResponse as DuplicateResolveResult } from "@pensia-docflow/shared";
+
+export type { DuplicateResolveResult };
 
 export class InvalidResolveRequestError extends Error {
   readonly code = "INVALID_RESOLVE_REQUEST";
@@ -46,13 +50,6 @@ export interface DuplicateResolveInput {
   actorUserId: string;
   resolution: string;
   justification?: string | null;
-}
-
-export interface DuplicateResolveResult {
-  id: string;
-  status: string;
-  resolvedBy: string;
-  resolvedAt: string;
 }
 
 function toIso(value: Date | string): string {
@@ -114,7 +111,7 @@ export async function resolveDuplicateCandidate(
   }
   return {
     id: after.id,
-    status: after.status,
+    status: after.status as CandidateStatus,
     resolvedBy: after.resolvedBy,
     resolvedAt: toIso(after.resolvedAt),
   };

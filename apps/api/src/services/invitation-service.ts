@@ -26,6 +26,10 @@
  */
 import { randomUUID } from "node:crypto";
 import type { AuditEventInput } from "../db/audit-writer.js";
+import type {
+  InvitationAcceptResponse,
+  InvitationRejectResponse,
+} from "@pensia-docflow/shared";
 
 export class InvitationError extends Error {
   constructor(code: string, message: string) {
@@ -277,7 +281,7 @@ export async function acceptInvitation(
     authenticatedUserId: string;
     authenticatedEmail: string;
   },
-): Promise<{ userId: string; organizationId: string; role: string }> {
+): Promise<InvitationAcceptResponse> {
   const email = normalizeInvitationEmail(input.authenticatedEmail);
   return deps.transact(async (tx) => {
     const invitation = await tx.invitations.findById(input.invitationId);
@@ -350,7 +354,7 @@ export async function rejectInvitation(
     authenticatedUserId: string;
     authenticatedEmail: string;
   },
-): Promise<{ id: string; status: string }> {
+): Promise<InvitationRejectResponse> {
   const email = normalizeInvitationEmail(input.authenticatedEmail);
   return deps.transact(async (tx) => {
     const invitation = await tx.invitations.findById(input.invitationId);

@@ -19,6 +19,7 @@
  */
 import type { DocFlowRole } from "../db/permission-service.js";
 import type { AuditEventInput } from "../db/audit-writer.js";
+import type { ChangeRoleResponse } from "@pensia-docflow/shared";
 
 export class MemberError extends Error {
   constructor(code: string, message: string) {
@@ -115,7 +116,7 @@ export async function changeRole(
     newRole: string;
     actorUserId: string;
   },
-): Promise<{ userId: string; organizationId: string; role: DocFlowRole }> {
+): Promise<ChangeRoleResponse> {
   if (!VALID_ROLES.has(input.newRole)) {
     throw new MemberInvalidRoleError();
   }

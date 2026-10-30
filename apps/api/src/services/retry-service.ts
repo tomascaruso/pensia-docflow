@@ -23,6 +23,10 @@
 
 import { puedeTransitar } from "../db/state-machine.js";
 
+import type { RetryResponse as RetryResult } from "@pensia-docflow/shared";
+
+export type { RetryResult };
+
 export class RetryDocumentNotFoundError extends Error {
   readonly code = "RETRY_DOCUMENT_NOT_FOUND";
   constructor() {
@@ -109,14 +113,6 @@ export interface RetryInput {
   actorUserId: string;
   actorRole: string;
   now?: Date;
-}
-
-export interface RetryResult {
-  documentId: string;
-  jobStatus: string;
-  retriedAt: string;
-  previousStatus: string;
-  attempts: number;
 }
 
 async function auditDeniedSwallowed(
