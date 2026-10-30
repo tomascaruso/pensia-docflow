@@ -37,7 +37,7 @@ function splitEnvList(name: string): string[] {
 
 const port = Number(process.env.API_PORT ?? 3001);
 const host = process.env.API_HOST ?? "127.0.0.1";
-const app = buildApp({
+const app = await buildApp({
   db,
   auth,
   platformAdminEmails: splitEnvList("PENSIA_PLATFORM_ADMIN_EMAILS"),

@@ -163,7 +163,8 @@ describe.skipIf(!process.env.DOCFLOW_B3_TEST)(
         basePath: storageDir,
         tokenSecret: "b3-test-secret",
       });
-      app = buildApp({
+      app = await buildApp({
+        disableRateLimit: true,
         db: instance.db,
         auth: instance.auth,
         platformAdminEmails: [ADMIN_EMAIL],
@@ -345,7 +346,8 @@ describe.skipIf(!process.env.DOCFLOW_B3_TEST)(
             return fn(wrapped);
           },
         );
-      failApp = buildApp({
+      failApp = await buildApp({
+        disableRateLimit: true,
         db: failDb as unknown as NodePgDatabase,
         auth: instance.auth,
         platformAdminEmails: [ADMIN_EMAIL],

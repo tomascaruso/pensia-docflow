@@ -84,10 +84,10 @@ interface TestApp {
   app: FastifyInstance;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   seed(tables);
   const db = createFakeDb(tables);
@@ -101,7 +101,8 @@ function buildTestApp(
     },
     handler: async () => new Response("no usado", { status: 404 }),
   };
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -114,7 +115,7 @@ const ADMIN = fakeUser("admin-01", "admin@example.com");
 
 describe("GET /organizations/:id", () => {
   it("miembro ve detalle con su rol; no miembro 404; sin sesión 401", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedOrg(t, "org-01", "Org Uno");
       seedMember(t, "org-01", "rev-01", "reviewer");
     });
@@ -133,7 +134,7 @@ describe("GET /organizations/:id", () => {
     });
     await app.close();
 
-    const outsider = buildTestApp(ADMIN, (t) => {
+    const outsider = await buildTestApp(ADMIN, (t) => {
       seedOrg(t, "org-01", "Org Uno");
     });
     await outsider.app.ready();
@@ -147,7 +148,7 @@ describe("GET /organizations/:id", () => {
     ).toBe(404);
     await outsider.app.close();
 
-    const noSession = buildTestApp(null, (t) => {
+    const noSession = await buildTestApp(null, (t) => {
       seedOrg(t, "org-01", "Org Uno");
     });
     await noSession.app.ready();
@@ -165,7 +166,7 @@ describe("GET /organizations/:id", () => {
 
 describe("GET /me/organizations", () => {
   it("una org, varias orgs, ninguna (array vacío); sin sesión 401", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedOrg(t, "org-01", "Org Uno");
       seedOrg(t, "org-02", "Org Dos");
       seedMember(t, "org-01", "rev-01", "reviewer");
@@ -185,7 +186,7 @@ describe("GET /me/organizations", () => {
     });
     await app.close();
 
-    const none = buildTestApp(ADMIN, (t) => {
+    const none = await buildTestApp(ADMIN, (t) => {
       seedOrg(t, "org-01", "Org Uno");
     });
     await none.app.ready();
@@ -199,7 +200,7 @@ describe("GET /me/organizations", () => {
     ).toEqual({ organizations: [] });
     await none.app.close();
 
-    const noSession = buildTestApp(null, () => {});
+    const noSession = await buildTestApp(null, () => {});
     await noSession.app.ready();
     expect(
       (

@@ -109,10 +109,10 @@ interface TestApp {
   tables: Tables;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   tables.get(schema.organizations)?.push({
     id: "org-01",
@@ -138,7 +138,8 @@ function buildTestApp(
     },
     handler: async () => new Response("no usado", { status: 404 }),
   };
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -151,7 +152,7 @@ const ADMIN = fakeUser("admin-01", "admin@example.com");
 
 describe("GET /organizations/:orgId/documents", () => {
   it("lista con filtros, paginación y búsqueda; org incorrecta 404; sin sesión 401; query inválida 400", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDocument(t, { id: "doc-01", status: "needs_review" });
       seedDocument(t, {
@@ -248,7 +249,7 @@ describe("GET /organizations/:orgId/documents", () => {
     expect(bad.statusCode).toBe(400);
     await app.close();
 
-    const outsider = buildTestApp(ADMIN, () => {});
+    const outsider = await buildTestApp(ADMIN, () => {});
     await outsider.app.ready();
     const notFound = await outsider.app.inject({
       method: "GET",
@@ -257,7 +258,7 @@ describe("GET /organizations/:orgId/documents", () => {
     expect(notFound.statusCode).toBe(404);
     await outsider.app.close();
 
-    const noSession = buildTestApp(null, () => {});
+    const noSession = await buildTestApp(null, () => {});
     await noSession.app.ready();
     const unauthorized = await noSession.app.inject({
       method: "GET",
@@ -270,7 +271,7 @@ describe("GET /organizations/:orgId/documents", () => {
 
 describe("GET /organizations/:orgId/documents/:docId", () => {
   it("detalle completo; documento sin datos; org incorrecta 404; inexistente 404", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDocument(t, { id: "doc-01" });
       seedDocument(t, { id: "doc-02", status: "approved" });

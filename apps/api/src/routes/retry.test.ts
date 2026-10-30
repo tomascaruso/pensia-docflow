@@ -132,10 +132,10 @@ interface TestApp {
   db: FakeDb;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   seedOrg(tables, "org-01");
   seed(tables);
@@ -150,7 +150,8 @@ function buildTestApp(
     },
     handler: async () => new Response("no usado", { status: 404 }),
   };
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -176,7 +177,7 @@ async function retry(app: FastifyInstance): Promise<{
 
 describe("POST /organizations/:orgId/documents/:docId/retry", () => {
   it("401 sin sesión", async () => {
-    const { app } = buildTestApp(null, (t) => {
+    const { app } = await buildTestApp(null, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, "failed");
       seedJob(t);
@@ -188,7 +189,7 @@ describe("POST /organizations/:orgId/documents/:docId/retry", () => {
   });
 
   it("failed con intentos por miembro → 200 queued, attempts intactos", async () => {
-    const { app, tables } = buildTestApp(REVIEWER, (t) => {
+    const { app, tables } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, "failed");
       seedJob(t);
@@ -210,7 +211,7 @@ describe("POST /organizations/:orgId/documents/:docId/retry", () => {
   });
 
   it("blocked por org_admin → 200 con attempts 0", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedDoc(t, "blocked");
       seedJob(t, { status: "blocked", attempts: 3 });
@@ -234,7 +235,7 @@ describe("POST /organizations/:orgId/documents/:docId/retry", () => {
     // test de ruta; contra Postgres real es una transacción
     // separada y persiste. La integración (sub-paso 9) la afirma
     // contra la base real.
-    const { app, tables } = buildTestApp(REVIEWER, (t) => {
+    const { app, tables } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, "blocked");
       seedJob(t, { status: "blocked", attempts: 3 });
@@ -248,7 +249,7 @@ describe("POST /organizations/:orgId/documents/:docId/retry", () => {
   });
 
   it("pending → 409 job_not_retryable; completed → 409 job_already_completed; sin job → 404", async () => {
-    const pending = buildTestApp(REVIEWER, (t) => {
+    const pending = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, "failed");
       seedJob(t, { status: "pending" });
@@ -259,7 +260,7 @@ describe("POST /organizations/:orgId/documents/:docId/retry", () => {
     expect((resPending.json() as { error: string }).error).toBe("job_not_retryable");
     await pending.app.close();
 
-    const completed = buildTestApp(REVIEWER, (t) => {
+    const completed = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, "needs_review");
       seedJob(t, { status: "completed" });
@@ -270,7 +271,7 @@ describe("POST /organizations/:orgId/documents/:docId/retry", () => {
     expect((resCompleted.json() as { error: string }).error).toBe("job_already_completed");
     await completed.app.close();
 
-    const noJob = buildTestApp(REVIEWER, (t) => {
+    const noJob = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedDoc(t, "failed");
     });

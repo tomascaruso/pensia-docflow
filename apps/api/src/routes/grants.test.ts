@@ -109,10 +109,10 @@ interface TestApp {
   tables: Tables;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   seedOrg(tables, "org-01", "Org Uno");
   seedOrg(tables, "org-02", "Org Dos");
@@ -128,7 +128,8 @@ function buildTestApp(
     },
     handler: async () => new Response("no usado", { status: 404 }),
   };
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -150,7 +151,7 @@ function auditOf(tables: Tables): FakeRow[] {
 
 describe("POST /organizations/:id/grants", () => {
   it("201 admin otorga a reviewer + auditoría granted", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
     });
@@ -176,7 +177,7 @@ describe("POST /organizations/:id/grants", () => {
   });
 
   it("§5.1-4: org_admin de otra org otorga a miembro ajeno → 404 sin fila, intento auditado", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-02", MEMBER_B.id, "reviewer");
     });
@@ -203,7 +204,7 @@ describe("POST /organizations/:id/grants", () => {
   });
 
   it("§5.1-5: org_admin otorga a otro org_admin → 409 sin fila, intento auditado", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "admin-02", "org_admin");
     });
@@ -226,7 +227,7 @@ describe("POST /organizations/:id/grants", () => {
   });
 
   it("403 reviewer otorga, 404 beneficiario no miembro, 409 duplicado vigente, 400 clave inválida, 401 sin sesión", async () => {
-    const reviewerApp = buildTestApp(REVIEWER, (t) => {
+    const reviewerApp = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
     });
@@ -243,7 +244,7 @@ describe("POST /organizations/:id/grants", () => {
     expect(forbidden.statusCode).toBe(403);
     await reviewerApp.app.close();
 
-    const outsiderApp = buildTestApp(ADMIN, (t) => {
+    const outsiderApp = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
     });
     await outsiderApp.app.ready();
@@ -269,7 +270,7 @@ describe("POST /organizations/:id/grants", () => {
     expect(badKey.statusCode).toBe(400);
     await outsiderApp.app.close();
 
-    const dupApp = buildTestApp(ADMIN, (t) => {
+    const dupApp = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedGrant(t);
@@ -288,7 +289,7 @@ describe("POST /organizations/:id/grants", () => {
     expect(grantsOf(dupApp.tables)).toHaveLength(1);
     await dupApp.app.close();
 
-    const noSessionApp = buildTestApp(null, () => {});
+    const noSessionApp = await buildTestApp(null, () => {});
     await noSessionApp.app.ready();
     const unauthorized = await noSessionApp.app.inject({
       method: "POST",
@@ -306,7 +307,7 @@ describe("POST /organizations/:id/grants", () => {
 
 describe("POST revoke / GET grants", () => {
   it("revoke 200 + revokedAt; segunda revocación 404; grant de otra org 404", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedGrant(t);
@@ -331,7 +332,7 @@ describe("POST revoke / GET grants", () => {
     expect(second.statusCode).toBe(404);
     await app.close();
 
-    const otherOrgApp = buildTestApp(ADMIN, (t) => {
+    const otherOrgApp = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-02", MEMBER_B.id, "reviewer");
       seedGrant(t, { organizationId: "org-02", userId: MEMBER_B.id });
@@ -346,7 +347,7 @@ describe("POST revoke / GET grants", () => {
   });
 
   it("GET grants: admin lista solo vigentes; reviewer 403", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedGrant(t, { id: "grant-01" });
@@ -367,7 +368,7 @@ describe("POST revoke / GET grants", () => {
     expect(body.grants.map((row) => row.id)).toEqual(["grant-01"]);
     await app.close();
 
-    const reviewerApp = buildTestApp(REVIEWER, (t) => {
+    const reviewerApp = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-01", "rev-01", "reviewer");
     });

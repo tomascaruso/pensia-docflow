@@ -89,10 +89,10 @@ interface TestApp {
   app: FastifyInstance;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   tables.get(schema.organizations)?.push({
     id: "org-01",
@@ -112,7 +112,8 @@ function buildTestApp(
     },
     handler: async () => new Response("no usado", { status: 404 }),
   };
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -125,7 +126,7 @@ const ADMIN = fakeUser("admin-01", "admin@example.com");
 
 describe("GET /organizations/:orgId/audit-events", () => {
   it("filtros, búsqueda, fechas, org incorrecta 404, sin sesión 401, query inválida 400", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedEvent(t, { id: "e-01" });
       seedEvent(t, {
@@ -213,7 +214,7 @@ describe("GET /organizations/:orgId/audit-events", () => {
     expect(bad.statusCode).toBe(400);
     await app.close();
 
-    const outsider = buildTestApp(ADMIN, () => {});
+    const outsider = await buildTestApp(ADMIN, () => {});
     await outsider.app.ready();
     expect(
       (
@@ -225,7 +226,7 @@ describe("GET /organizations/:orgId/audit-events", () => {
     ).toBe(404);
     await outsider.app.close();
 
-    const noSession = buildTestApp(null, () => {});
+    const noSession = await buildTestApp(null, () => {});
     await noSession.app.ready();
     expect(
       (

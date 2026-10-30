@@ -151,7 +151,8 @@ describe.skipIf(!process.env.DOCFLOW_B2_TEST)(
       const instance = await import("../auth/instance.js");
       rawDb = instance.db;
       closePool = () => instance.pool.end();
-      app = buildApp({
+      app = await buildApp({
+        disableRateLimit: true,
         db: instance.db,
         auth: instance.auth,
         platformAdminEmails: [ADMIN_A_EMAIL, ADMIN_B_EMAIL],

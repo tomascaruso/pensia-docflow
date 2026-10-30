@@ -120,10 +120,10 @@ interface TestApp {
   storage: UploadStoragePort & { files: Map<string, Buffer> };
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   seedOrg(tables);
   seed(tables);
@@ -139,7 +139,8 @@ function buildTestApp(
     handler: async () => new Response("no usado", { status: 404 }),
   };
   const storage = createFakeStorage();
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -214,7 +215,7 @@ async function upload(
 
 describe("POST /organizations/:id/documents", () => {
   it("201 PDF válido: documento queued, job, auditoría, storage", async () => {
-    const { app, tables, storage } = buildTestApp(ADMIN, (t) => {
+    const { app, tables, storage } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
     });
     await app.ready();
@@ -256,7 +257,7 @@ describe("POST /organizations/:id/documents", () => {
   });
 
   it("201 JPG y PNG", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
     });
     await app.ready();
@@ -281,7 +282,7 @@ describe("POST /organizations/:id/documents", () => {
   });
 
   it("422 PDF de 21 páginas", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
     });
     await app.ready();
@@ -294,7 +295,7 @@ describe("POST /organizations/:id/documents", () => {
   });
 
   it("413 archivo > 10 MB (truncado por el plugin)", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
     });
     await app.ready();
@@ -311,7 +312,7 @@ describe("POST /organizations/:id/documents", () => {
   });
 
   it("400 magic bytes inválidos", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
     });
     await app.ready();
@@ -323,7 +324,7 @@ describe("POST /organizations/:id/documents", () => {
   });
 
   it("400 sin part de archivo y 400 nombre vacío", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
     });
     await app.ready();
@@ -336,14 +337,14 @@ describe("POST /organizations/:id/documents", () => {
   });
 
   it("401 sin sesión, 404 no miembro", async () => {
-    const noSession = buildTestApp(null, () => {});
+    const noSession = await buildTestApp(null, () => {});
     await noSession.app.ready();
     const pdf = await makePdf(1);
     const unauthorized = await upload(noSession.app, "f.pdf", pdf);
     expect(unauthorized.statusCode).toBe(401);
     await noSession.app.close();
 
-    const outsider = buildTestApp(ADMIN, () => {});
+    const outsider = await buildTestApp(ADMIN, () => {});
     await outsider.app.ready();
     const notFound = await upload(outsider.app, "f.pdf", pdf);
     expect(notFound.statusCode).toBe(404);
@@ -353,7 +354,7 @@ describe("POST /organizations/:id/documents", () => {
   it("409 duplicado exacto con id y auditoría", async () => {
     const pdf = await makePdf(1);
     const hash = createHash("sha256").update(pdf).digest("hex");
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       t.get(schema.documents)?.push({
         id: "doc-existente",
@@ -386,7 +387,7 @@ describe("POST /organizations/:id/documents", () => {
   it("201 con existente rejected + auditoría de reemplazo", async () => {
     const pdf = await makePdf(1);
     const hash = createHash("sha256").update(pdf).digest("hex");
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       t.get(schema.documents)?.push({
         id: "doc-rechazado",

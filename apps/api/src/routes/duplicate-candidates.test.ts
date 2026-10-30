@@ -139,10 +139,10 @@ interface TestApp {
   db: FakeDb;
 }
 
-function buildTestApp(
+async function buildTestApp(
   sessionUser: User | null,
   seed: (tables: Tables) => void,
-): TestApp {
+): Promise<TestApp> {
   const tables = emptyTables();
   seedOrg(tables, "org-01");
   seedOrg(tables, "org-02");
@@ -158,7 +158,8 @@ function buildTestApp(
     },
     handler: async () => new Response("no usado", { status: 404 }),
   };
-  const app = buildApp({
+  const app = await buildApp({
+    disableRateLimit: true,
     db: db as unknown as NodePgDatabase,
     auth: fakeAuth,
     platformAdminEmails: ["admin@example.com"],
@@ -203,7 +204,7 @@ function seedBase(t: Tables): void {
 
 describe("POST /organizations/:orgId/duplicate-candidates/:candidateId/resolve", () => {
   it("401 sin sesión", async () => {
-    const { app } = buildTestApp(null, (t) => {
+    const { app } = await buildTestApp(null, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedBase(t);
     });
@@ -216,7 +217,7 @@ describe("POST /organizations/:orgId/duplicate-candidates/:candidateId/resolve",
   });
 
   it("distinct por miembro → 200 con resolvedBy/resolvedAt", async () => {
-    const { app, tables } = buildTestApp(REVIEWER, (t) => {
+    const { app, tables } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedBase(t);
     });
@@ -243,7 +244,7 @@ describe("POST /organizations/:orgId/duplicate-candidates/:candidateId/resolve",
   });
 
   it("overridden por org_admin con justificación → 200", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedBase(t);
     });
@@ -260,7 +261,7 @@ describe("POST /organizations/:orgId/duplicate-candidates/:candidateId/resolve",
   });
 
   it("§5.1-6: reviewer overridden → 403 + resolve_denied persistente", async () => {
-    const { app, tables } = buildTestApp(REVIEWER, (t) => {
+    const { app, tables } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedBase(t);
     });
@@ -279,7 +280,7 @@ describe("POST /organizations/:orgId/duplicate-candidates/:candidateId/resolve",
   });
 
   it("overridden sin justificación → 400", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedBase(t);
     });
@@ -292,7 +293,7 @@ describe("POST /organizations/:orgId/duplicate-candidates/:candidateId/resolve",
   });
 
   it("ya resuelto → 409", async () => {
-    const { app } = buildTestApp(REVIEWER, (t) => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
       seedMember(t, "org-01", "rev-01", "reviewer");
       seedBase(t);
     });
@@ -305,7 +306,7 @@ describe("POST /organizations/:orgId/duplicate-candidates/:candidateId/resolve",
   });
 
   it("cross-org → 409 quarantined CON auditoría persistida", async () => {
-    const { app, tables } = buildTestApp(ADMIN, (t) => {
+    const { app, tables } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedBase(t);
     });
@@ -326,7 +327,7 @@ describe("POST /organizations/:orgId/duplicate-candidates/:candidateId/resolve",
   });
 
   it("org del path distinta del candidato → 404", async () => {
-    const { app } = buildTestApp(ADMIN, (t) => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
       seedMember(t, "org-01", "admin-01", "org_admin");
       seedMember(t, "org-02", "admin-01", "org_admin");
       seedBase(t);
