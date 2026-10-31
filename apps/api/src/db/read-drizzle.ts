@@ -243,6 +243,7 @@ export interface ListDocumentsQuery {
   search?: string;
   limit: number;
   offset: number;
+  order?: "asc" | "desc";
 }
 
 export async function listDocumentsOfOrg(
@@ -269,6 +270,13 @@ export async function listDocumentsOfOrg(
   if (query.search !== undefined && query.search !== "") {
     const needle = query.search;
     const needleDigits = digitsOnly(needle);
+    // F4.5: la rama CUIT solo se activa con un CUIT completo: 11
+    // dígitos exactos o formato XX-XXXXXXXX-X. Antes, cualquier
+    // dígito del término matcheaba por CUIT ("F4 A" → "4" y todo
+    // CUIT con un 4 matcheaba), así que buscar un proveedor por
+    // nombre devolvía toda la lista.
+    const isCuitSearch =
+      /^\d{11}$/.test(needle) || /^\d{2}-\d{8}-\d{1}$/.test(needle);
     docs = docs.filter((doc) => {
       if (
         includesIgnoreCase(doc.supplierName, needle) ||
@@ -276,13 +284,17 @@ export async function listDocumentsOfOrg(
       ) {
         return true;
       }
-      if (needleDigits !== "" && doc.supplierTaxId !== null) {
+      if (
+        isCuitSearch &&
+        needleDigits !== "" &&
+        doc.supplierTaxId !== null
+      ) {
         return digitsOnly(doc.supplierTaxId).includes(needleDigits);
       }
       return false;
     });
   }
-  docs.sort(byCreatedDesc);
+  docs.sort(query.order === "asc" ? byCreatedAsc : byCreatedDesc);
   const total = docs.length;
   return { rows: paginate(docs, query.limit, query.offset), total };
 }

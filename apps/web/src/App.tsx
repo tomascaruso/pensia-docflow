@@ -8,13 +8,16 @@ import { LoginPage } from "./pages/LoginPage";
 import { NoOrganizationPage } from "./pages/NoOrganizationPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { OrganizationPage } from "./pages/OrganizationPage";
+import { DocumentsPage } from "./pages/DocumentsPage";
+import { PendingReviewsPage } from "./pages/PendingReviewsPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 /**
- * Rutas de DocFlow (F1). Las pantallas S1–S10 son placeholders hasta su
- * fase. "documentos/nuevo" es estática y gana a "documentos/:docId" por
- * ranking del router. S3 (revisiones) es S2 con el filtro needs_review.
+ * Rutas de DocFlow (F1). S2 y S3 son reales desde F4; el resto de las
+ * pantallas S1–S10 son placeholders hasta su fase. "documentos/nuevo"
+ * es estática y gana a "documentos/:docId" por ranking del router.
+ * S3 (revisiones) es S2 con el filtro needs_review.
  */
 export default function App() {
   return (
@@ -27,12 +30,16 @@ export default function App() {
             <Route index element={<PlaceholderPage title="Inicio" />} />
             <Route
               path="documentos"
-              element={<PlaceholderPage title="Documentos" />}
+              element={
+                <DocumentsPage
+                  title="Documentos"
+                  countNoun="documentos"
+                  order="desc"
+                  actionLabel="Ver"
+                />
+              }
             />
-            <Route
-              path="revisiones"
-              element={<PlaceholderPage title="Revisiones pendientes" />}
-            />
+            <Route path="revisiones" element={<PendingReviewsPage />} />
             <Route
               path="documentos/nuevo"
               element={<PlaceholderPage title="Carga de documento" />}

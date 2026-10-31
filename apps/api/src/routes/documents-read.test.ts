@@ -267,6 +267,122 @@ describe("GET /organizations/:orgId/documents", () => {
     expect(unauthorized.statusCode).toBe(401);
     await noSession.app.close();
   });
+
+  it("búsqueda: la rama CUIT solo se activa con CUIT completo (F4.5)", async () => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
+      seedMember(t, "org-01", "rev-01", "reviewer");
+      seedDocument(t, {
+        id: "doc-a1",
+        supplierName: "Proveedor F4 A",
+        supplierTaxId: "30-12345678-9",
+        invoiceNumber: "0001-00000001",
+        createdAt: new Date("2026-02-11T00:00:00Z"),
+        updatedAt: new Date("2026-02-11T00:00:00Z"),
+      });
+      seedDocument(t, {
+        id: "doc-a2",
+        supplierName: "Proveedor F4 A",
+        supplierTaxId: "30-12345671-9",
+        invoiceNumber: "0001-00000002",
+        createdAt: new Date("2026-02-12T00:00:00Z"),
+        updatedAt: new Date("2026-02-12T00:00:00Z"),
+      });
+      seedDocument(t, {
+        id: "doc-b1",
+        supplierName: "Proveedor F4 B",
+        supplierTaxId: "30-12345672-9",
+        invoiceNumber: "0001-00000003",
+        createdAt: new Date("2026-02-13T00:00:00Z"),
+        updatedAt: new Date("2026-02-13T00:00:00Z"),
+      });
+    });
+    await app.ready();
+    const ids = async (url: string): Promise<string[]> => {
+      const res = await app.inject({ method: "GET", url });
+      expect(res.statusCode).toBe(200);
+      return (res.json() as { documents: Array<{ id: string }> }).documents.map(
+        (d) => d.id,
+      );
+    };
+    // Frase con dígito suelto: solo nombre, no CUIT (antes devolvía los 3
+    // porque digitsOnly("F4 A") = "4" y los 3 CUITs contienen 4).
+    expect(
+      await ids("/organizations/org-01/documents?search=Proveedor%20F4%20A"),
+    ).toEqual(["doc-a2", "doc-a1"]);
+    // CUIT completo con guiones: matchea por CUIT.
+    expect(
+      await ids("/organizations/org-01/documents?search=30-12345678-9"),
+    ).toEqual(["doc-a1"]);
+    // CUIT completo con 11 dígitos: matchea por CUIT.
+    expect(
+      await ids("/organizations/org-01/documents?search=30123456789"),
+    ).toEqual(["doc-a1"]);
+    // 4 dígitos: no es CUIT; ningún nombre/número contiene "1234".
+    expect(
+      await ids("/organizations/org-01/documents?search=1234"),
+    ).toEqual([]);
+    // 12 dígitos: no es un CUIT válido; no matchea por CUIT.
+    expect(
+      await ids("/organizations/org-01/documents?search=301234567890"),
+    ).toEqual([]);
+    await app.close();
+  });
+
+  it("order=asc lista el más antiguo primero; desc o sin parámetro, el más reciente; order inválido 400", async () => {
+    const { app } = await buildTestApp(REVIEWER, (t) => {
+      seedMember(t, "org-01", "rev-01", "reviewer");
+      seedDocument(t, {
+        id: "doc-01",
+        createdAt: new Date("2026-02-11T00:00:00Z"),
+        updatedAt: new Date("2026-02-11T00:00:00Z"),
+      });
+      seedDocument(t, {
+        id: "doc-02",
+        status: "approved",
+        createdAt: new Date("2026-02-12T00:00:00Z"),
+        updatedAt: new Date("2026-02-12T00:00:00Z"),
+      });
+    });
+    await app.ready();
+
+    const asc = await app.inject({
+      method: "GET",
+      url: "/organizations/org-01/documents?order=asc",
+    });
+    expect(asc.statusCode).toBe(200);
+    expect(
+      (asc.json() as { documents: Array<{ id: string }> }).documents.map(
+        (d) => d.id,
+      ),
+    ).toEqual(["doc-01", "doc-02"]);
+
+    const desc = await app.inject({
+      method: "GET",
+      url: "/organizations/org-01/documents?order=desc",
+    });
+    expect(
+      (desc.json() as { documents: Array<{ id: string }> }).documents.map(
+        (d) => d.id,
+      ),
+    ).toEqual(["doc-02", "doc-01"]);
+
+    const def = await app.inject({
+      method: "GET",
+      url: "/organizations/org-01/documents",
+    });
+    expect(
+      (def.json() as { documents: Array<{ id: string }> }).documents.map(
+        (d) => d.id,
+      ),
+    ).toEqual(["doc-02", "doc-01"]);
+
+    const bad = await app.inject({
+      method: "GET",
+      url: "/organizations/org-01/documents?order=sideways",
+    });
+    expect(bad.statusCode).toBe(400);
+    await app.close();
+  });
 });
 
 describe("GET /organizations/:orgId/documents/:docId", () => {
