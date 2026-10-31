@@ -8,6 +8,7 @@ import { ReviewStates } from "../components/documents/ReviewStates";
 import { ReviewHeader } from "../components/documents/ReviewHeader";
 import { DocumentViewer } from "../components/documents/DocumentViewer";
 import { ReviewFields } from "../components/documents/ReviewFields";
+import { LineItemsPanel } from "../components/documents/LineItemsPanel";
 import { ValidationPanel } from "../components/documents/ValidationPanel";
 import { DuplicatePanel } from "../components/documents/DuplicatePanel";
 import { HistoryPanel } from "../components/documents/HistoryPanel";
@@ -41,6 +42,8 @@ const NON_EDITABLE: DocumentStatus[] = [
  * de POST /decisions al aprobar. R3: Anterior/Siguiente salen de
  * la query needs_review (order desc, primera página de 25); si el
  * documento no está en esa lista, ambos quedan deshabilitados.
+ * F6.1 (G1): el layout needs_review incluye LineItemsPanel (solo
+ * lectura) después de los campos y antes de las validaciones.
  * canDecide es true: el permiso real lo impone el backend con 403
  * y la UI lo muestra como toast de error, sin pre-juzgar.
  */
@@ -79,7 +82,7 @@ export function ReviewPage() {
     return <p>No se pudo cargar el documento.</p>;
   }
 
-  const { document, fields, validations, candidates, decisions, jobs } =
+  const { document, fields, lines, validations, candidates, decisions, jobs } =
     detail.data;
   const status = document.status;
 
@@ -180,6 +183,7 @@ export function ReviewPage() {
           readOnly={false}
         />
       </div>
+      <LineItemsPanel lineItems={lines} />
       <ValidationPanel validations={validations} />
       <DuplicatePanel
         candidates={candidates}

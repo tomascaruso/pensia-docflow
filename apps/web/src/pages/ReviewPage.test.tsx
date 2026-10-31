@@ -61,6 +61,7 @@ interface Harness {
   detailStatus?: string;
   validations?: unknown[];
   candidates?: unknown[];
+  lines?: unknown[];
   listDocs?: Array<{ id: string }>;
   decisionsPostStatus?: number;
   fetchMock: ReturnType<typeof vi.fn>;
@@ -91,7 +92,7 @@ function renderReview(harness: Partial<Harness> = {}) {
       return jsonResponse(200, {
         document: doc(harness.detailStatus ?? "needs_review"),
         fields: [field()],
-        lines: [],
+        lines: harness.lines ?? [],
         validations: harness.validations ?? [],
         candidates: harness.candidates ?? [],
         decisions: [],
@@ -362,5 +363,36 @@ describe("ReviewPage", () => {
     });
     expect(screen.getByRole("button", { name: "Anterior" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Siguiente" })).toBeDisabled();
+  });
+
+  it("con líneas muestra el panel LineItemsPanel (F6.1, G1)", async () => {
+    renderReview({
+      lines: [
+        {
+          lineNumber: 1,
+          description: "Item A",
+          quantity: "2",
+          unitPrice: "50.00",
+          lineTotal: "100.00",
+        },
+      ],
+    });
+    await screen.findByRole("heading", {
+      name: "Proveedor Uno — 0001-00001234",
+    });
+    expect(
+      screen.getByRole("heading", { name: "Líneas" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Item A")).toBeInTheDocument();
+  });
+
+  it("sin líneas no muestra el panel LineItemsPanel (F6.1, G1)", async () => {
+    renderReview({});
+    await screen.findByRole("heading", {
+      name: "Proveedor Uno — 0001-00001234",
+    });
+    expect(
+      screen.queryByRole("heading", { name: "Líneas" }),
+    ).not.toBeInTheDocument();
   });
 });
