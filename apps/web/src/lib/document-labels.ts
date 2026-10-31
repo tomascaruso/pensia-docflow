@@ -28,6 +28,31 @@ export function documentStatusLabel(status: DocumentStatus): string {
 }
 
 /**
+ * Etiqueta en español para una clave de campo del vocabulario (F6-B,
+ * S5). Los 6 campos son los componentes de la clave de negocio
+ * (Misión 1 §4): proveedor, identificador fiscal, número, fecha,
+ * moneda y total.
+ */
+export function fieldKeyLabel(fieldKey: string): string {
+  switch (fieldKey) {
+    case "supplier_name":
+      return "Proveedor";
+    case "supplier_tax_id":
+      return "Identificador fiscal";
+    case "invoice_number":
+      return "Número de factura";
+    case "issue_date":
+      return "Fecha de emisión";
+    case "currency":
+      return "Moneda";
+    case "total_amount":
+      return "Total";
+    default:
+      return fieldKey;
+  }
+}
+
+/**
  * Fecha ISO → formato corto es-AR con año ("15 oct 2026").
  * Para fechas date-only (issueDate "YYYY-MM-DD"): se construye la
  * fecha local por partes (año, mes-1, día) en lugar de
