@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { DocumentsEmptyState } from "./DocumentsEmptyState";
 
 afterEach(() => {
@@ -9,23 +10,31 @@ afterEach(() => {
 });
 
 describe("DocumentsEmptyState", () => {
-  it("sin documentos: invita a cargar, botón deshabilitado", () => {
-    render(<DocumentsEmptyState variant="empty" />);
+  it("sin documentos: invita a cargar, link a S4", () => {
+    render(
+      <MemoryRouter>
+        <DocumentsEmptyState variant="empty" orgId="org-1" />
+      </MemoryRouter>,
+    );
     expect(
       screen.getByText("Cargá tu primer documento"),
     ).toBeInTheDocument();
-    const button = screen.getByRole("button", { name: "Cargar documento" });
-    expect(button).toBeDisabled();
-    expect(button.getAttribute("title")).toBe(
-      "Cargar documento — disponible próximamente",
-    );
+    // F5: el CTA ya no es un botón deshabilitado sino un link a S4.
+    const link = screen.getByRole("link", { name: "Cargar documento" });
+    expect(link).toHaveAttribute("href", "/o/org-1/documentos/nuevo");
   });
 
   it("sin resultados: ofrece limpiar filtros", async () => {
     const user = userEvent.setup();
     const onClear = vi.fn();
     render(
-      <DocumentsEmptyState variant="no-results" onClearFilters={onClear} />,
+      <MemoryRouter>
+        <DocumentsEmptyState
+          variant="no-results"
+          orgId="org-1"
+          onClearFilters={onClear}
+        />
+      </MemoryRouter>,
     );
     expect(
       screen.getByText("No hay documentos con esos filtros"),

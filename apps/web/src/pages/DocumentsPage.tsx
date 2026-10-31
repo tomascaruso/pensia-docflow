@@ -1,7 +1,7 @@
 import { FilePlus, X } from "lucide-react";
 import type { DocumentStatus } from "@pensia-docflow/shared";
 import { DOCUMENT_STATUSES } from "@pensia-docflow/shared";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { useOrg } from "../components/auth/OrgProvider";
 import { DocumentFilters, type StatusFilter } from "../components/documents/DocumentFilters";
@@ -129,14 +129,11 @@ export function DocumentsPage({
           </p>
         </div>
         {!hideUploadButton && (
-          <Button
-            variant="default"
-            disabled
-            title="Cargar documento — disponible próximamente"
-            className="disabled:opacity-60 cursor-not-allowed"
-          >
-            <FilePlus aria-hidden="true" className="h-4 w-4" />
-            Cargar documento
+          <Button asChild variant="default">
+            <Link to={`/o/${orgId}/documentos/nuevo`}>
+              <FilePlus aria-hidden="true" className="h-4 w-4" />
+              Cargar documento
+            </Link>
           </Button>
         )}
       </div>
@@ -196,6 +193,7 @@ export function DocumentsPage({
               ? "empty"
               : "no-results"
           }
+          orgId={orgId}
           onClearFilters={clearFilters}
         />
       )}

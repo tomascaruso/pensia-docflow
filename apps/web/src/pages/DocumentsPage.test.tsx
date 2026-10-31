@@ -130,15 +130,13 @@ afterEach(() => {
 });
 
 describe("DocumentsPage (S2)", () => {
-  it("renderiza tabla, total, botón cargar deshabilitado y duplicados", async () => {
+  it("renderiza tabla, total, botón cargar como link a S4 y duplicados", async () => {
     renderPage([makeDoc(1), makeDoc(2)]);
     expect(await screen.findByText("Proveedor Ejemplo S.A.")).toBeInTheDocument();
     expect(screen.getByText("2 documentos")).toBeInTheDocument();
-    const upload = screen.getByRole("button", { name: "Cargar documento" });
-    expect(upload).toBeDisabled();
-    expect(upload.getAttribute("title")).toBe(
-      "Cargar documento — disponible próximamente",
-    );
+    // F5: el CTA ya no es un botón deshabilitado sino un link a S4.
+    const upload = screen.getByRole("link", { name: "Cargar documento" });
+    expect(upload).toHaveAttribute("href", "/o/org-1/documentos/nuevo");
     // El candidato une doc-01 con doc-02: ambos muestran "1 pendiente".
     expect(screen.getAllByText("1 pendiente")).toHaveLength(2);
     const links = screen.getAllByRole("link", { name: "Ver" });

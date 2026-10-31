@@ -10,6 +10,7 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import { OrganizationPage } from "./pages/OrganizationPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { PendingReviewsPage } from "./pages/PendingReviewsPage";
+import { UploadPage } from "./pages/UploadPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -40,10 +41,7 @@ export default function App() {
               }
             />
             <Route path="revisiones" element={<PendingReviewsPage />} />
-            <Route
-              path="documentos/nuevo"
-              element={<PlaceholderPage title="Carga de documento" />}
-            />
+            <Route path="documentos/nuevo" element={<UploadPage />} />
             <Route
               path="documentos/:docId"
               element={<PlaceholderPage title="Revisión de documento" />}
