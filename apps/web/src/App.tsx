@@ -11,6 +11,7 @@ import { OrganizationPage } from "./pages/OrganizationPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { PendingReviewsPage } from "./pages/PendingReviewsPage";
 import { UploadPage } from "./pages/UploadPage";
+import { ReviewPage } from "./pages/ReviewPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -42,10 +43,7 @@ export default function App() {
             />
             <Route path="revisiones" element={<PendingReviewsPage />} />
             <Route path="documentos/nuevo" element={<UploadPage />} />
-            <Route
-              path="documentos/:docId"
-              element={<PlaceholderPage title="Revisión de documento" />}
-            />
+            <Route path="documentos/:docId" element={<ReviewPage />} />
             <Route
               path="duplicados"
               element={<PlaceholderPage title="Duplicados" />}
