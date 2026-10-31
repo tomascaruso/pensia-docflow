@@ -84,6 +84,7 @@ interface ListQuery {
   status?: string;
   supplier?: string;
   search?: string;
+  order: "asc" | "desc";
 }
 
 function parseListQuery(query: unknown): ListQuery | null {
@@ -128,7 +129,14 @@ function parseListQuery(query: unknown): ListQuery | null {
     }
     search = q["search"];
   }
-  return { limit, offset, status, supplier, search };
+  let order: "asc" | "desc" = "desc";
+  if (q["order"] !== undefined) {
+    if (q["order"] !== "asc" && q["order"] !== "desc") {
+      return null;
+    }
+    order = q["order"];
+  }
+  return { limit, offset, status, supplier, search, order };
 }
 
 export function registerDocumentsReadRoutes(
