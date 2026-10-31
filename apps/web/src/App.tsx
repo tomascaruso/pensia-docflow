@@ -1,14 +1,15 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
-import { AdminRoute } from "./components/auth/AdminRoute";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { queryClient } from "./lib/query-client";
 import { ForbiddenPage } from "./pages/ForbiddenPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NoOrganizationPage } from "./pages/NoOrganizationPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { OrganizationPage } from "./pages/OrganizationPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 /**
  * Rutas de DocFlow (F1). Las pantallas S1–S10 son placeholders hasta su
@@ -52,21 +53,11 @@ export default function App() {
               path="auditoria"
               element={<PlaceholderPage title="Auditoría" />}
             />
-            <Route
-              path="configuracion"
-              element={<PlaceholderPage title="Configuración" />}
-            />
+            <Route path="configuracion" element={<SettingsPage />} />
             <Route
               path="configuracion/organizacion"
-              element={<AdminRoute />}
-            >
-              <Route
-                index
-                element={
-                  <PlaceholderPage title="Organización y permisos" />
-                }
-              />
-            </Route>
+              element={<OrganizationPage />}
+            />
           </Route>
           <Route path="/sin-permiso" element={<ForbiddenPage />} />
           <Route path="*" element={<NotFoundPage />} />

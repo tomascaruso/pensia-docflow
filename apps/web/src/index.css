@@ -37,6 +37,29 @@
 
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+
+  /**
+   * Badges semánticos (F3.5). Tailwind 4: theme(colors.*) de Tailwind 3
+   * se escribe var(--color-*) — la paleta por defecto ya define
+   * --color-blue-50, etc. Contraste AA verificado por cómputo (todos
+   * ≥ 4,5:1; ver DESIGN.md): admin 6,16; reviewer 9,45; approve 5,21;
+   * export 7,07; pending 4,84.
+   */
+  --color-badge-admin-bg: var(--color-blue-50);
+  --color-badge-admin-fg: var(--color-blue-700);
+  --color-badge-admin-border: var(--color-blue-200);
+  --color-badge-reviewer-bg: var(--color-slate-100);
+  --color-badge-reviewer-fg: var(--color-slate-700);
+  --color-badge-reviewer-border: var(--color-slate-200);
+  --color-badge-approve-bg: var(--color-emerald-50);
+  --color-badge-approve-fg: var(--color-emerald-700);
+  --color-badge-approve-border: var(--color-emerald-200);
+  --color-badge-export-bg: var(--color-indigo-50);
+  --color-badge-export-fg: var(--color-indigo-700);
+  --color-badge-export-border: var(--color-indigo-200);
+  --color-badge-pending-bg: var(--color-amber-50);
+  --color-badge-pending-fg: var(--color-amber-700);
+  --color-badge-pending-border: var(--color-amber-200);
 }
 
 @layer base {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { OrgProvider } from "../auth/OrgProvider";
@@ -93,6 +93,9 @@ describe("AppLayout", () => {
     expect(
       await screen.findByRole("combobox", { name: "Organización" }),
     ).toBeInTheDocument();
+    // F3.5: el email y "Cerrar sesión" viven en el dropdown del menú de
+    // usuario; el botón muestra el nombre ("Ana").
+    fireEvent.click(screen.getByRole("button", { name: "Ana" }));
     expect(await screen.findByText("ana@example.com")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Cerrar sesión" }),
@@ -128,10 +131,14 @@ describe("AppLayout", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("el ítem activo queda marcado y Organización solo la ve org_admin", async () => {
+  it("el ítem activo queda marcado y Organización la ven ambos roles", async () => {
+    // F3: S9 es visible para todos los miembros (lectura); el gating de
+    // modificación vive dentro de OrganizationPage, no en el Sidebar.
     renderLayout("reviewer", 0);
     await screen.findByText("Contenido");
-    expect(screen.queryByRole("link", { name: "Organización" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Organización" }),
+    ).toBeInTheDocument();
     const inicio = screen.getByRole("link", { name: "Inicio" });
     expect(inicio).toHaveAttribute("aria-current", "page");
   });
