@@ -88,6 +88,9 @@ test("login válido redirige a la org y logout vuelve a /login", async ({
   await page.getByLabel("Contraseña").fill(PASSWORD);
   await page.getByRole("button", { name: "Ingresar" }).click();
   await expect(page).toHaveURL(new RegExp(`/o/${orgId}$`));
+  // F3.5: la top bar muestra el nombre (no el email); el email y el
+  // logout viven en el dropdown del menú de usuario.
+  await page.getByRole("button", { name: "Revisor E2E" }).click();
   await expect(page.getByText(REVIEWER_EMAIL)).toBeVisible();
   await page.getByRole("button", { name: "Cerrar sesión" }).click();
   await expect(page).toHaveURL(/\/login$/);

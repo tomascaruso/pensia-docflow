@@ -89,3 +89,28 @@ export function invalidateAfterInvitationReject(
 ): Promise<void> {
   return client.invalidateQueries({ queryKey: queryKeys.meInvitations });
 }
+
+/**
+ * Cambiar rol de un miembro (F3): invalida la lista de miembros y el
+ * detalle de la org (el rol propio vive en orgDetail: si un admin se
+ * degrada a sí mismo, el siguiente render ya lo ve como reviewer).
+ */
+export function invalidateAfterRoleChange(
+  client: QueryClient,
+  orgId: string,
+): Promise<void> {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: queryKeys.orgMembers(orgId) }),
+    client.invalidateQueries({ queryKey: queryKeys.orgDetail(orgId) }),
+  ]).then(() => undefined);
+}
+
+/** Invitar a un miembro (F3): invalida la lista de invitaciones. */
+export function invalidateAfterInvite(
+  client: QueryClient,
+  orgId: string,
+): Promise<void> {
+  return client.invalidateQueries({
+    queryKey: queryKeys.orgInvitations(orgId),
+  });
+}
