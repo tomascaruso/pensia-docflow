@@ -207,9 +207,12 @@ test.describe("S5 Revisión de documento", () => {
     await expect(
       page.getByRole("button", { name: "Confirmar rechazo" }),
     ).toBeDisabled();
+    // F6.1 (G2): el motivo ya no es un textarea sino un Select; en
+    // Chromium real abre con click (a diferencia de jsdom).
     await page
-      .getByLabel("Motivo del rechazo")
-      .fill("Datos incorrectos");
+      .getByRole("combobox", { name: "Motivo del rechazo" })
+      .click();
+    await page.getByRole("option", { name: "Duplicado" }).click();
     await page.getByRole("button", { name: "Confirmar rechazo" }).click();
     await expect(page.getByText("Documento rechazado.")).toBeVisible();
   });
