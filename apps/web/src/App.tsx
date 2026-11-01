@@ -14,6 +14,7 @@ import { UploadPage } from "./pages/UploadPage";
 import { ReviewPage } from "./pages/ReviewPage";
 import { DuplicatesPage } from "./pages/DuplicatesPage";
 import { ExportsPage } from "./pages/ExportsPage";
+import { AuditPage } from "./pages/AuditPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -53,7 +54,7 @@ export default function App() {
             />
             <Route
               path="auditoria"
-              element={<PlaceholderPage title="Auditoría" />}
+              element={<AuditPage />}
             />
             <Route path="configuracion" element={<SettingsPage />} />
             <Route
