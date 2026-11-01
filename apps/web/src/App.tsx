@@ -15,7 +15,7 @@ import { ReviewPage } from "./pages/ReviewPage";
 import { DuplicatesPage } from "./pages/DuplicatesPage";
 import { ExportsPage } from "./pages/ExportsPage";
 import { AuditPage } from "./pages/AuditPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { HomePage } from "./pages/HomePage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 /**
@@ -32,7 +32,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/sin-organizacion" element={<NoOrganizationPage />} />
           <Route path="/o/:orgId" element={<ProtectedRoute />}>
-            <Route index element={<PlaceholderPage title="Inicio" />} />
+            <Route index element={<HomePage />} />
             <Route
               path="documentos"
               element={
