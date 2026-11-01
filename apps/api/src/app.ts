@@ -54,6 +54,7 @@ import { registerExportRoutes } from "./routes/exports.js";
 import { registerDocumentsReadRoutes } from "./routes/documents-read.js";
 import { registerAuditEventRoutes } from "./routes/audit-events.js";
 import { registerSummaryRoutes } from "./routes/summary.js";
+import { registerMeRoutes } from "./routes/me.js";
 import {
   MAX_FILE_BYTES,
   type UploadStoragePort,
@@ -168,6 +169,10 @@ export async function buildApp(
       auth: options.auth,
     });
     registerSummaryRoutes(app, {
+      db: options.db,
+      auth: options.auth,
+    });
+    registerMeRoutes(app, {
       db: options.db,
       auth: options.auth,
     });

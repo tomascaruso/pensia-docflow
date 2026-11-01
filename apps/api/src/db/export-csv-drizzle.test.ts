@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import * as schema from "./schema.js";
+import * as authTables from "../auth/tables.js";
 import {
   createExportCsvDrizzle,
   type CsvDrizzleClient,
@@ -187,7 +188,14 @@ describe("findLineRows", () => {
 
 describe("findExportsByOrg (createFakeDb)", () => {
   function listTables(): Map<unknown, FakeRow[]> {
-    const tables = new Map<unknown, FakeRow[]>([[schema.exports, []]]);
+    // F10a: el enriquecimiento consulta ítems, líneas y usuario;
+    // el fake exige tablas registradas aunque estén vacías.
+    const tables = new Map<unknown, FakeRow[]>([
+      [schema.exports, []],
+      [schema.exportItems, []],
+      [schema.extractionLines, []],
+      [authTables.user, []],
+    ]);
     tables.get(schema.exports)?.push(
       {
         id: "export-viejo",
@@ -258,5 +266,50 @@ describe("findExportsByOrg (createFakeDb)", () => {
     });
     expect(result.total).toBe(1);
     expect(result.rows.map((r) => r.id)).toEqual(["export-otra-org"]);
+  });
+});
+
+describe("findExportsByOrg (F10a: nombre y lineCount)", () => {
+  it("nombre del usuario + conteo de líneas; sin fila de usuario → null y 0 líneas", async () => {
+    const tables = baseTables();
+    tables.set(authTables.user, [
+      {
+        id: "admin-01",
+        name: "Ana Administradora",
+        email: "ana@example.com",
+        emailVerified: false,
+        image: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    ]);
+    // Segundo export sin usuario ni ítems: nombre null, 0 líneas.
+    tables.get(schema.exports)?.push({
+      id: "export-huerfano",
+      organizationId: ORG,
+      documentCount: 0,
+      status: "pending",
+      requestedBy: "usuario-borrado",
+      createdAt: new Date("2026-02-13T10:00:00.000Z"),
+      completedAt: null,
+    });
+    const client = asClient(createFakeDb(tables));
+    const result = await client.findExportsByOrg(ORG, {
+      limit: 25,
+      offset: 0,
+    });
+    expect(result.total).toBe(2);
+    // Orden DESC: el huérfano (13 feb) antes que EXPORT (12 feb).
+    expect(result.rows[0]).toMatchObject({
+      id: "export-huerfano",
+      requestedByName: null,
+      lineCount: 0,
+    });
+    // EXPORT: 2 ítems (DOC_A con 2 líneas, DOC_B sin líneas).
+    expect(result.rows[1]).toMatchObject({
+      id: EXPORT,
+      requestedByName: "Ana Administradora",
+      lineCount: 2,
+    });
   });
 });

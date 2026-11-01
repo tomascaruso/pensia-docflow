@@ -19,6 +19,7 @@ import {
   type ExportsStatusFilter,
 } from "../hooks/useExports";
 import { useCreateExport } from "../hooks/useCreateExport";
+import { useMyPermissions } from "../hooks/useMyPermissions";
 
 const STATUSES: ExportsStatusFilter[] = [
   "all",
@@ -37,15 +38,26 @@ const NO_PERMISSION_TEXT =
  * "Nueva exportación" → diálogo con selección de solo
  * aprobados, descarga por enlace directo al /csv del backend.
  *
- * Permisos: el spec pide el botón deshabilitado sin permiso
- * vigente, pero el frontend no conoce los grants (no existe
- * GET /me/permissions, misma limitación que F7): el botón
- * queda habilitado y un 403 del backend llega como toast con
- * el texto del spec. La descarga la protege el backend
- * (requireRole export_documents en GET /csv).
+ * Permisos (F10a): GET /me/permissions ya existe, así que el
+ * botón "Nueva exportación" se deshabilita sin permiso vigente
+ * (org_admin o grant export_documents) y muestra el texto del
+ * spec; los enlaces de descarga se renderizan sin href en ese
+ * caso. Mientras los permisos cargan, el botón queda habilitado
+ * (comportamiento previo). El backend sigue siendo la
+ * autoridad: un 403 llega como toast con el texto del spec.
  */
 export function ExportsPage() {
-  const { orgId } = useOrg();
+  const { orgId, role } = useOrg();
+  const permissionsQuery = useMyPermissions(orgId);
+  /**
+   * F10a — Sin datos todavía → habilitado (comportamiento
+   * previo); con datos → org_admin o grant vigente.
+   */
+  const canExport =
+    permissionsQuery.data === undefined
+      ? true
+      : role === "org_admin" ||
+        permissionsQuery.data.permissions.includes("export_documents");
   const [searchParams, setSearchParams] = useSearchParams();
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -113,10 +125,16 @@ export function ExportsPage() {
             registrada.
           </p>
         </div>
-        <Button onClick={() => setDialogOpen(true)}>
+        <Button
+          onClick={() => setDialogOpen(true)}
+          disabled={!canExport}
+        >
           Nueva exportación
         </Button>
       </div>
+      {permissionsQuery.data !== undefined && !canExport && (
+        <p className="text-sm text-slate-500">{NO_PERMISSION_TEXT}</p>
+      )}
       <div className="flex items-center gap-2">
         <label htmlFor="exports-status" className="text-sm">
           Estado
@@ -148,6 +166,7 @@ export function ExportsPage() {
         isPending={exportsQuery.isPending}
         isError={exportsQuery.isError}
         orgId={orgId}
+        canExport={canExport}
         onPageChange={(next) => updateParams({ page: next })}
         onRetry={() => exportsQuery.refetch()}
         onCreateClick={() => setDialogOpen(true)}

@@ -23,6 +23,7 @@ function exportRow(overrides: Partial<Export> = {}): Export {
     documentCount: 3,
     status: "completed",
     requestedBy: "user-1",
+    lineCount: 0,
     createdAt: "2026-10-15T12:00:00.000Z",
     completedAt: null,
     ...overrides,
@@ -224,5 +225,45 @@ describe("ExportsTable", () => {
     );
     expect(screen.getByText("d797adcb…")).toBeInTheDocument();
     expect(screen.getByTitle(full)).toBeInTheDocument();
+  });
+
+  it("F10a: nombre cuando viene + columna Líneas con lineCount", () => {
+    render(
+      <ExportsTable
+        {...BASE_PROPS}
+        exports={[
+          exportRow({
+            requestedByName: "Ana Administradora",
+            lineCount: 7,
+          }),
+        ]}
+        isPending={false}
+        isError={false}
+      />,
+    );
+    expect(screen.getByText("Ana Administradora")).toBeInTheDocument();
+    expect(screen.getByText("Líneas")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+  });
+
+  it("F10a: sin canExport, las descargas son texto sin href", () => {
+    render(
+      <ExportsTable
+        {...BASE_PROPS}
+        exports={[exportRow()]}
+        isPending={false}
+        isError={false}
+        canExport={false}
+      />,
+    );
+    for (const name of [
+      "Descargar CSV principal",
+      "Descargar CSV de líneas",
+    ]) {
+      const span = screen.getByText(name);
+      expect(span.closest("a")).toBeNull();
+      expect(span.getAttribute("aria-disabled")).toBe("true");
+    }
+    expect(screen.queryByRole("link")).toBeNull();
   });
 });

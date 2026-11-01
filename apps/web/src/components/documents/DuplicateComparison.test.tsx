@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { MemberRole } from "@pensia-docflow/shared";
 import { MemoryRouter } from "react-router-dom";
 import { DuplicateComparison } from "./DuplicateComparison";
 
@@ -100,7 +99,7 @@ const BASE_PROPS = {
   current: CURRENT,
   compared: COMPARED,
   isPending: false,
-  role: "org_admin" as MemberRole,
+  canApprove: true,
   orgId: "org-1",
   onResolve: () => {},
   isResolving: false,
@@ -152,9 +151,9 @@ describe("DuplicateComparison", () => {
     ).toBeNull();
   });
 
-  it("exacto + reviewer: excepción deshabilitada con texto A-07", () => {
+  it("exacto + sin approve_documents: excepción deshabilitada con texto A-07", () => {
     renderComparison(
-      { role: "reviewer" },
+      { canApprove: false },
       { kind: "business_exact", reasonCode: "BUSINESS_EXACT" },
     );
     expect(

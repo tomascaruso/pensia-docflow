@@ -324,6 +324,8 @@ export function registerExportRoutes(
           documentCount: row.documentCount,
           status: row.status as ExportStatus,
           requestedBy: row.requestedBy,
+          requestedByName: row.requestedByName,
+          lineCount: row.lineCount,
           createdAt: toIsoOrNull(row.createdAt),
           completedAt: toIsoOrNull(row.completedAt),
         })),

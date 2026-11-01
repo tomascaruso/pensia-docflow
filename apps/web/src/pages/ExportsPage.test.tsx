@@ -54,6 +54,8 @@ function docRow(id: string, status: string) {
 function renderPage(options: {
   listStatus?: number;
   createStatus?: number;
+  role?: "org_admin" | "reviewer";
+  permissions?: string[];
 }) {
   const calls: { url: string; method: string; body: unknown }[] = [];
   const client = new QueryClient({
@@ -62,6 +64,7 @@ function renderPage(options: {
       mutations: { retry: false },
     },
   });
+  const role = options.role ?? "org_admin";
   const wrapper = ({ children }: { children: ReactNode }) => (
     <MemoryRouter initialEntries={["/o/org-1/exportaciones"]}>
       <QueryClientProvider client={client}>
@@ -72,9 +75,9 @@ function renderPage(options: {
               id: "org-1",
               name: "Org",
               createdAt: null,
-              membership: { role: "org_admin" },
+              membership: { role },
             },
-            role: "org_admin",
+            role,
           }}
         >
           {children}
@@ -94,6 +97,12 @@ function renderPage(options: {
             ? JSON.parse(String(init.body))
             : undefined,
       });
+      if (url.includes("/me/permissions")) {
+        if (options.permissions === undefined) {
+          return jsonResponse(404, { error: "not_found", message: "x" });
+        }
+        return jsonResponse(200, { permissions: options.permissions });
+      }
       if (url.includes("/exports") && method === "POST") {
         return jsonResponse(options.createStatus ?? 201, {
           id: "exp-new",
@@ -249,5 +258,37 @@ describe("ExportsPage", () => {
         screen.getByRole("button", { name: "Crear exportación" }),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("F10a: reviewer sin export_documents → botón deshabilitado + texto del spec + descargas sin href", async () => {
+    renderPage({ role: "reviewer", permissions: [] });
+    // El texto del spec solo aparece cuando los permisos ya
+    // cargaron: esperarlo primero evita un falso positivo con
+    // el fallback "habilitado mientras carga".
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "No tenés el permiso de exportación. Pedíselo a un administrador de tu organización.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Nueva exportación" }),
+    ).toBeDisabled();
+    const link = screen.getByText("Descargar CSV principal");
+    expect(link.closest("a")).toBeNull();
+  });
+
+  it("F10a: reviewer con grant export_documents → botón habilitado + descargas con href", async () => {
+    renderPage({ role: "reviewer", permissions: ["export_documents"] });
+    await waitFor(() =>
+      expect(screen.getByText("Lista")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Nueva exportación" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("link", { name: /Descargar CSV principal/ }),
+    ).toBeInTheDocument();
   });
 });

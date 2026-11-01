@@ -14,6 +14,7 @@ import {
   type DuplicatesView,
 } from "../hooks/useDuplicateCandidates";
 import { useResolveCandidate } from "../hooks/useResolveCandidate";
+import { useMyPermissions } from "../hooks/useMyPermissions";
 
 const VIEWS: DuplicatesView[] = ["pendientes", "resueltos", "todos"];
 const KINDS: DuplicatesKindFilter[] = [
@@ -43,6 +44,16 @@ const NO_PERMISSION_TEXT =
  */
 export function DuplicatesPage() {
   const { orgId, role } = useOrg();
+  const permissionsQuery = useMyPermissions(orgId);
+  /**
+   * F10a — Excepción de exacto: org_admin o grant
+   * approve_documents vigente. Mientras carga, cae al rol
+   * (comportamiento previo: fail-closed para reviewer).
+   */
+  const canApprove =
+    role === "org_admin" ||
+    (permissionsQuery.data?.permissions.includes("approve_documents") ??
+      false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -168,7 +179,7 @@ export function DuplicatesPage() {
           current={selectedRow.currentDetail}
           compared={selectedRow.comparedDetail}
           isPending={false}
-          role={role}
+          canApprove={canApprove}
           orgId={orgId}
           onResolve={handleResolve}
           isResolving={resolveCandidate.isPending}

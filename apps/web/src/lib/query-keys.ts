@@ -15,6 +15,7 @@ export const queryKeys = {
   session: ["session"] as const,
   meOrganizations: ["me", "organizations"] as const,
   meInvitations: ["me", "invitations"] as const,
+  myPermissions: (orgId: string) => ["me", "permissions", orgId] as const,
   orgDetail: (orgId: string) => ["org", orgId, "detail"] as const,
   orgSummary: (orgId: string) => ["org", orgId, "summary"] as const,
   orgDocuments: (orgId: string, filters: ListFilters) =>
