@@ -91,6 +91,36 @@ export function formatDateShortWithYearEsAR(
 }
 
 /**
+ * Fecha+hora ISO → formato corto es-AR con año y hora local
+ * ("15 oct 2026, 09:00"). Pulido F8 (ítem 3): S7 muestra fecha
+ * con hora; reutiliza formatDateShortWithYearEsAR para la parte
+ * de fecha (misma regla date-only/local que esa función).
+ * Sin fecha válida → "—".
+ */
+export function formatDateTimeEsAR(
+  iso: string | null | undefined,
+): string {
+  if (iso === null || iso === undefined || iso === "") {
+    return "—";
+  }
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  const date =
+    dateOnly !== null
+      ? new Date(
+          Number(dateOnly[1]),
+          Number(dateOnly[2]) - 1,
+          Number(dateOnly[3]),
+        )
+      : new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${formatDateShortWithYearEsAR(iso)}, ${hours}:${minutes}`;
+}
+
+/**
  * Importe NUMERIC (string) + moneda ISO → texto es-AR
  * ("$ 121.000,50"). Se usa totalAmount, no totalCents: totalCents es
  * null cuando el importe tiene más de 2 decimales exactos. Sin

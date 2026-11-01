@@ -13,6 +13,7 @@ import { PendingReviewsPage } from "./pages/PendingReviewsPage";
 import { UploadPage } from "./pages/UploadPage";
 import { ReviewPage } from "./pages/ReviewPage";
 import { DuplicatesPage } from "./pages/DuplicatesPage";
+import { ExportsPage } from "./pages/ExportsPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -48,7 +49,7 @@ export default function App() {
             <Route path="duplicados" element={<DuplicatesPage />} />
             <Route
               path="exportaciones"
-              element={<PlaceholderPage title="Exportaciones" />}
+              element={<ExportsPage />}
             />
             <Route
               path="auditoria"
