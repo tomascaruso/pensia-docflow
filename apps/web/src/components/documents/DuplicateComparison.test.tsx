@@ -156,9 +156,12 @@ describe("DuplicateComparison", () => {
       { canApprove: false },
       { kind: "business_exact", reasonCode: "BUSINESS_EXACT" },
     );
-    expect(
-      screen.getByRole("button", { name: "Aceptar como excepción" }),
-    ).toBeDisabled();
+    const boton = screen.getByRole("button", {
+      name: /aceptar como excepción/i,
+    });
+    expect(boton).toBeDisabled();
+    expect(boton).toHaveTextContent(/solo admin/i);
+    expect(boton.querySelector("svg")).not.toBeNull();
     expect(
       screen.getByText(
         "Solo un administrador puede aceptar la excepción de un duplicado exacto.",
@@ -167,6 +170,34 @@ describe("DuplicateComparison", () => {
     expect(
       screen.queryByRole("button", { name: "Es otro comprobante" }),
     ).toBeNull();
+  });
+
+  it("F10a-FIX: exacto + canApprove=true: botón habilitado y sin texto A-07", () => {
+    renderComparison(
+      { canApprove: true },
+      { kind: "business_exact", reasonCode: "BUSINESS_EXACT" },
+    );
+    const boton = screen.getByRole("button", {
+      name: /aceptar como excepción/i,
+    });
+    expect(boton).toBeEnabled();
+    expect(
+      screen.queryByText(/solo un administrador puede aceptar/i),
+    ).toBeNull();
+    expect(boton).not.toHaveTextContent(/solo admin/i);
+    expect(boton.querySelector("svg")).toBeNull();
+  });
+
+  it("F10a-FIX: links Ver documento son botones outline con ícono", () => {
+    renderComparison();
+    const actual = screen.getByRole("link", {
+      name: /ver documento actual en revisión/i,
+    });
+    const comparado = screen.getByRole("link", {
+      name: /ver documento comparado en revisión/i,
+    });
+    expect(actual.querySelector("svg")).not.toBeNull();
+    expect(comparado.querySelector("svg")).not.toBeNull();
   });
 
   it("Confirmar deshabilitado sin justificación; con texto resuelve", async () => {

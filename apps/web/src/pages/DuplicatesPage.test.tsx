@@ -231,9 +231,11 @@ describe("DuplicatesPage", () => {
       expect(screen.getByText("doc-01.pdf")).toBeInTheDocument(),
     );
     await user.click(screen.getByRole("button", { name: "Comparar" }));
-    expect(
-      screen.getByRole("button", { name: "Aceptar como excepción" }),
-    ).toBeDisabled();
+    const boton = screen.getByRole("button", {
+      name: /aceptar como excepción/i,
+    });
+    expect(boton).toBeDisabled();
+    expect(boton).toHaveTextContent(/solo admin/i);
     expect(
       screen.getByText(
         "Solo un administrador puede aceptar la excepción de un duplicado exacto.",

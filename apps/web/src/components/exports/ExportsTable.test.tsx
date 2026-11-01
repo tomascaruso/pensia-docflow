@@ -266,4 +266,21 @@ describe("ExportsTable", () => {
     }
     expect(screen.queryByRole("link")).toBeNull();
   });
+
+  it("F10a-FIX: header de usuario en singular", () => {
+    render(
+      <ExportsTable
+        {...BASE_PROPS}
+        exports={[exportRow()]}
+        isPending={false}
+        isError={false}
+      />,
+    );
+    expect(
+      screen.getByRole("columnheader", { name: "Usuario" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "Usuarios" }),
+    ).toBeNull();
+  });
 });

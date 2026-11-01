@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { Lock } from "lucide-react";
 import { DomainError } from "@pensia-docflow/shared";
 import type { ExportStatus } from "@pensia-docflow/shared";
 import { useOrg } from "../components/auth/OrgProvider";
@@ -45,6 +46,8 @@ const NO_PERMISSION_TEXT =
  * caso. Mientras los permisos cargan, el botón queda habilitado
  * (comportamiento previo). El backend sigue siendo la
  * autoridad: un 403 llega como toast con el texto del spec.
+ * F10a-FIX: el botón deshabilitado es inconfundible (outline +
+ * texto gris + candado), no solo el opacity-50 de shadcn.
  */
 export function ExportsPage() {
   const { orgId, role } = useOrg();
@@ -128,7 +131,12 @@ export function ExportsPage() {
         <Button
           onClick={() => setDialogOpen(true)}
           disabled={!canExport}
+          variant={canExport ? "default" : "outline"}
+          className={
+            !canExport ? "cursor-not-allowed text-muted-foreground" : ""
+          }
         >
+          {!canExport && <Lock className="h-4 w-4 mr-1" aria-hidden />}
           Nueva exportación
         </Button>
       </div>

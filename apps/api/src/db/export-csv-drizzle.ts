@@ -379,6 +379,17 @@ export function createExportCsvDrizzle(db: CsvDrizzleClient): {
           decision === undefined
             ? null
             : asStringOrNull(decision["decidedBy"]);
+        /**
+         * F10a-FIX — decided_by con nombre: mismo criterio que
+         * requestedByName (findUserName por id contra la tabla
+         * `user` de Better Auth). Sin fila → se mantiene el UUID
+         * (comportamiento previo para usuarios borrados); sin
+         * decisión → null (celda vacía, no inventada).
+         */
+        const decidedByName =
+          decidedBy === null
+            ? null
+            : ((await findUserName(db, decidedBy)) ?? decidedBy);
         const decidedAtRaw =
           decision === undefined ? null : decision["decidedAt"];
         const decidedAt =
@@ -404,7 +415,7 @@ export function createExportCsvDrizzle(db: CsvDrizzleClient): {
             currency: asStringOrNull(doc["currency"]),
             totalAmount: asStringOrNull(doc["totalAmount"]),
             approvedAt: decidedAt,
-            decidedBy,
+            decidedBy: decidedByName,
           },
           sortTime: toSortTime(
             createdAt instanceof Date || typeof createdAt === "string"

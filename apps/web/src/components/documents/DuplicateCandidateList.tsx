@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { ArrowRight, Search } from "lucide-react";
 import type {
   CandidateKind,
   DuplicateCandidate,
@@ -317,6 +317,7 @@ export function DuplicateCandidateList({
                         onClick={() => onSelect(candidate)}
                       >
                         Comparar
+                        <ArrowRight className="h-4 w-4 ml-1" aria-hidden />
                       </Button>
                     </td>
                   </tr>

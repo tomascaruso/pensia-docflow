@@ -57,7 +57,7 @@ describe("buildMainCsv", () => {
   it("emite el header exacto y una fila con importes NUMERIC tal cual", () => {
     const csv = buildMainCsv([mainRow()], NO_BOM);
     expect(csv).toBe(
-      "id;supplier_name;supplier_tax_id;invoice_number;issue_date;currency;total_amount;approved_at;decided_by\r\n" +
+      "id;supplier_name;supplier_tax_id;invoice_number;issue_date;currency;total_amount;approved_at;decided_by_name\r\n" +
         "doc-1;Proveedor Ficticio Uno S.A.;30123456789;000100001234;2026-02-10;ARS;121000.0000;2026-02-11T10:00:00.000Z;usuario-ficticio-01\r\n",
     );
   });

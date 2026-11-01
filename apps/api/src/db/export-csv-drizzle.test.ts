@@ -33,6 +33,10 @@ function baseTables(): Map<unknown, FakeRow[]> {
     [schema.documents, []],
     [schema.documentDecisions, []],
     [schema.extractionLines, []],
+    // F10a-FIX: findMainRows resuelve decidedBy contra la tabla
+    // `user` (findUserName); sin registrarla, el fake lanza
+    // "tabla no registrada" (misma clase de fix que F10a).
+    [authTables.user, []],
   ]);
   tables.get(schema.exports)?.push({
     id: EXPORT,
@@ -151,6 +155,28 @@ describe("findMainRows", () => {
     expect(rows[0]?.decidedBy).toBeNull();
     expect(rows[0]?.issueDate).toBe("2026-02-09");
     expect(rows[1]?.totalAmount).toBe("1000.0000");
+  });
+
+  it("F10a-FIX: decidedBy resuelve nombre con fallback a UUID", async () => {
+    const tables = baseTables();
+    tables.get(authTables.user)?.push({
+      id: "admin-01",
+      name: "Ana Administradora",
+    });
+    tables.get(schema.documentDecisions)?.push({
+      id: "dec-b",
+      documentId: DOC_B,
+      decidedBy: "usuario-sin-fila",
+      decision: "approved",
+      decidedAt: new Date("2026-02-11T11:00:00.000Z"),
+    });
+    const client = asClient(createFakeDb(tables));
+    const rows = await client.findMainRows(EXPORT, ORG);
+    expect(rows).toHaveLength(2);
+    // DOC_B es más antiguo (08:00): su decisor no tiene fila → UUID.
+    expect(rows[0]?.decidedBy).toBe("usuario-sin-fila");
+    // DOC_A: decisor con fila → nombre, no UUID.
+    expect(rows[1]?.decidedBy).toBe("Ana Administradora");
   });
 
   it("documento de otra org en los ítems → error (fail-closed)", async () => {

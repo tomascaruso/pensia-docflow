@@ -291,4 +291,35 @@ describe("ExportsPage", () => {
       screen.getByRole("link", { name: /Descargar CSV principal/ }),
     ).toBeInTheDocument();
   });
+
+  it("F10a-FIX: reviewer sin export_documents → botón Nueva exportación outline con candado", async () => {
+    renderPage({ role: "reviewer", permissions: [] });
+    // El texto del spec solo aparece cuando los permisos ya
+    // cargaron: esperarlo primero evita un falso positivo con
+    // el fallback "habilitado mientras carga".
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "No tenés el permiso de exportación. Pedíselo a un administrador de tu organización.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    const boton = screen.getByRole("button", {
+      name: /nueva exportación/i,
+    });
+    expect(boton).toBeDisabled();
+    expect(boton.querySelector("svg")).not.toBeNull();
+  });
+
+  it("F10a-FIX: reviewer con grant export_documents → botón Nueva exportación sin candado", async () => {
+    renderPage({ role: "reviewer", permissions: ["export_documents"] });
+    await waitFor(() =>
+      expect(screen.getByText("Lista")).toBeInTheDocument(),
+    );
+    const boton = screen.getByRole("button", {
+      name: /nueva exportación/i,
+    });
+    expect(boton).toBeEnabled();
+    expect(boton.querySelector("svg")).toBeNull();
+  });
 });
