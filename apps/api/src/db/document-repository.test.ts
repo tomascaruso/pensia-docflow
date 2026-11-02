@@ -14,7 +14,7 @@ import {
   type DocumentDrizzleClient,
 } from "./document-repository.js";
 import * as schema from "./schema.js";
-import { readFileSync } from "node:fs";
+import { assertNoConflictingEnv, assertSeedTarget } from "./seed-guard.js";
 
 /**
  * Prueba contra docflow_dev REAL, solo con DOCFLOW_VERIFY_REAL=1.
@@ -38,17 +38,13 @@ describe.skipIf(!REAL_DB)("findDocumentById contra docflow_dev real", () => {
     const { Pool } = await import("pg");
     const { drizzle } = await import("drizzle-orm/node-postgres");
     const { eq } = await import("drizzle-orm");
-    const password = readFileSync(
-      "/home/hatch/.local/share/docflow-pg/.app-pw",
-      "utf8",
-    ).trim();
-    const pool = new Pool({
-      host: "127.0.0.1",
-      port: 5432,
-      database: "docflow_dev",
-      user: "docflow_app",
-      password,
-    });
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error("DOCFLOW_VERIFY_REAL: falta DATABASE_URL de pruebas local a docflow_dev.");
+    }
+    assertSeedTarget(connectionString);
+    assertNoConflictingEnv();
+    const pool = new Pool({ connectionString });
     const db = drizzle(pool, { schema });
     try {
       await db.transaction(async (tx) => {
