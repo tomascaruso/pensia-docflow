@@ -6,6 +6,7 @@ import {
   Clock,
   Download,
   Inbox,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
 import { getApiBase, joinUrl } from "../../lib/api-client";
@@ -73,6 +74,13 @@ interface ExportsTableProps {
   isPending: boolean;
   isError: boolean;
   orgId: string;
+  /**
+   * F10a — Sin permiso de exportación vigente, los enlaces de
+   * descarga se renderizan como texto sin href (el spec: "no se
+   * puede descargar"). Default true: los tests viejos que no lo
+   * pasan siguen viendo enlaces.
+   */
+  canExport?: boolean;
   onPageChange: (page: number) => void;
   onRetry: () => void;
   onCreateClick: () => void;
@@ -88,8 +96,9 @@ function csvHref(orgId: string, exportId: string, file: "main" | "lines"): strin
 /**
  * Identificador de usuario truncado (pulido F8, ítem 7):
  * primeros 8 caracteres + elipsis, con el UUID completo en
- * title para verlo al hover. Deuda: cuando el backend exponga
- * nombre de usuario, reemplazar.
+ * title para verlo al hover. F10a: si el backend trae
+ * requestedByName se muestra el nombre y esto queda solo como
+ * fallback (usuario borrado o respuesta vieja).
  */
 function truncateUserId(requestedBy: string | null | undefined): ReactNode {
   if (requestedBy === null || requestedBy === undefined) {
@@ -111,9 +120,9 @@ function truncateUserId(requestedBy: string | null | undefined): ReactNode {
  * es síncrona en el backend, así que los enlaces están
  * disponibles en cualquier estado — el estado no muta, deuda
  * B6, y ocultar los enlaces en "pending" dejaría la función
- * muerta). "Cantidad de filas" y "Ver detalle" del spec no se
- * implementan: el DTO de lista no trae lineCount ni existe
- * endpoint de detalle. "Reintentar" en filas con error vuelve
+ * muerta). "Cantidad de filas" del spec sí se implementa en
+ * F10a (columna "Líneas" con lineCount del DTO); "Ver detalle"
+ * sigue sin endpoint. "Reintentar" en filas con error vuelve
  * a pedir la lista (no hay endpoint de reintento).
  * Pulido F8: badges de estado (ítem 1), vacío con ícono +
  * CTA (ítem 2), fecha con hora (ítem 3), íconos de descarga
@@ -126,6 +135,7 @@ export function ExportsTable({
   isPending,
   isError,
   orgId,
+  canExport = true,
   onPageChange,
   onRetry,
   onCreateClick,
@@ -160,7 +170,17 @@ export function ExportsTable({
         <p className="text-sm font-medium text-text">
           Todavía no hay exportaciones
         </p>
-        <Button onClick={onCreateClick}>Nueva exportación</Button>
+        <Button
+          onClick={onCreateClick}
+          disabled={!canExport}
+          variant={canExport ? "default" : "outline"}
+          className={
+            !canExport ? "cursor-not-allowed border-dashed text-muted-foreground" : ""
+          }
+        >
+          {!canExport && <Lock className="h-4 w-4 mr-1" aria-hidden />}
+          Nueva exportación
+        </Button>
       </div>
     );
   }
@@ -169,17 +189,19 @@ export function ExportsTable({
     <div className="flex flex-col gap-4">
       <table className="w-full table-fixed border-collapse border border-border text-sm">
         <colgroup>
-          <col style={{ width: "16%" }} />
-          <col style={{ width: "24%" }} />
-          <col style={{ width: "12%" }} />
           <col style={{ width: "14%" }} />
-          <col style={{ width: "34%" }} />
+          <col style={{ width: "22%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "12%" }} />
+          <col style={{ width: "32%" }} />
         </colgroup>
         <thead>
           <tr className="bg-raised text-left">
             <th className="border border-border px-3 py-2">Fecha</th>
             <th className="border border-border px-3 py-2">Usuario</th>
             <th className="border border-border px-3 py-2">Documentos</th>
+            <th className="border border-border px-3 py-2">Líneas</th>
             <th className="border border-border px-3 py-2">Estado</th>
             <th className="border border-border px-3 py-2">Acciones</th>
           </tr>
@@ -191,10 +213,13 @@ export function ExportsTable({
                 {formatDateTimeEsAR(exp.createdAt)}
               </td>
               <td className="border border-border px-3 py-2">
-                {truncateUserId(exp.requestedBy)}
+                {exp.requestedByName ?? truncateUserId(exp.requestedBy)}
               </td>
               <td className="border border-border px-3 py-2">
                 {exp.documentCount}
+              </td>
+              <td className="border border-border px-3 py-2">
+                {exp.lineCount}
               </td>
               <td className="border border-border px-3 py-2">
                 <ExportStatusBadge status={exp.status} />
@@ -206,20 +231,41 @@ export function ExportsTable({
               </td>
               <td className="border border-border px-3 py-2">
                 <div className="flex flex-wrap gap-2">
-                  <a
-                    href={csvHref(orgId, exp.id, "main")}
-                    className="flex items-center gap-1 text-sm text-blue-600 underline"
-                  >
-                    <Download aria-hidden="true" className="h-4 w-4" />
-                    Descargar CSV principal
-                  </a>
-                  <a
-                    href={csvHref(orgId, exp.id, "lines")}
-                    className="flex items-center gap-1 text-sm text-blue-600 underline"
-                  >
-                    <Download aria-hidden="true" className="h-4 w-4" />
-                    Descargar CSV de líneas
-                  </a>
+                  {canExport ? (
+                    <>
+                      <a
+                        href={csvHref(orgId, exp.id, "main")}
+                        className="flex items-center gap-1 text-sm text-blue-600 underline"
+                      >
+                        <Download aria-hidden="true" className="h-4 w-4" />
+                        Descargar CSV principal
+                      </a>
+                      <a
+                        href={csvHref(orgId, exp.id, "lines")}
+                        className="flex items-center gap-1 text-sm text-blue-600 underline"
+                      >
+                        <Download aria-hidden="true" className="h-4 w-4" />
+                        Descargar CSV de líneas
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <span
+                        aria-disabled="true"
+                        className="flex items-center gap-1 text-sm text-slate-400"
+                      >
+                        <Download aria-hidden="true" className="h-4 w-4" />
+                        Descargar CSV principal
+                      </span>
+                      <span
+                        aria-disabled="true"
+                        className="flex items-center gap-1 text-sm text-slate-400"
+                      >
+                        <Download aria-hidden="true" className="h-4 w-4" />
+                        Descargar CSV de líneas
+                      </span>
+                    </>
+                  )}
                   {exp.status === "failed" && (
                     <Button
                       variant="outline"

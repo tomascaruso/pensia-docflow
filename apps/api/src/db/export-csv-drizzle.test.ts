@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import * as schema from "./schema.js";
+import * as authTables from "../auth/tables.js";
 import {
   createExportCsvDrizzle,
   type CsvDrizzleClient,
@@ -32,6 +33,10 @@ function baseTables(): Map<unknown, FakeRow[]> {
     [schema.documents, []],
     [schema.documentDecisions, []],
     [schema.extractionLines, []],
+    // F10a-FIX: findMainRows resuelve decidedBy contra la tabla
+    // `user` (findUserName); sin registrarla, el fake lanza
+    // "tabla no registrada" (misma clase de fix que F10a).
+    [authTables.user, []],
   ]);
   tables.get(schema.exports)?.push({
     id: EXPORT,
@@ -152,6 +157,28 @@ describe("findMainRows", () => {
     expect(rows[1]?.totalAmount).toBe("1000.0000");
   });
 
+  it("F10a-FIX: decidedBy resuelve nombre con fallback a UUID", async () => {
+    const tables = baseTables();
+    tables.get(authTables.user)?.push({
+      id: "admin-01",
+      name: "Ana Administradora",
+    });
+    tables.get(schema.documentDecisions)?.push({
+      id: "dec-b",
+      documentId: DOC_B,
+      decidedBy: "usuario-sin-fila",
+      decision: "approved",
+      decidedAt: new Date("2026-02-11T11:00:00.000Z"),
+    });
+    const client = asClient(createFakeDb(tables));
+    const rows = await client.findMainRows(EXPORT, ORG);
+    expect(rows).toHaveLength(2);
+    // DOC_B es más antiguo (08:00): su decisor no tiene fila → UUID.
+    expect(rows[0]?.decidedBy).toBe("usuario-sin-fila");
+    // DOC_A: decisor con fila → nombre, no UUID.
+    expect(rows[1]?.decidedBy).toBe("Ana Administradora");
+  });
+
   it("documento de otra org en los ítems → error (fail-closed)", async () => {
     const tables = baseTables();
     tables.get(schema.documents)?.push({
@@ -187,7 +214,14 @@ describe("findLineRows", () => {
 
 describe("findExportsByOrg (createFakeDb)", () => {
   function listTables(): Map<unknown, FakeRow[]> {
-    const tables = new Map<unknown, FakeRow[]>([[schema.exports, []]]);
+    // F10a: el enriquecimiento consulta ítems, líneas y usuario;
+    // el fake exige tablas registradas aunque estén vacías.
+    const tables = new Map<unknown, FakeRow[]>([
+      [schema.exports, []],
+      [schema.exportItems, []],
+      [schema.extractionLines, []],
+      [authTables.user, []],
+    ]);
     tables.get(schema.exports)?.push(
       {
         id: "export-viejo",
@@ -258,5 +292,50 @@ describe("findExportsByOrg (createFakeDb)", () => {
     });
     expect(result.total).toBe(1);
     expect(result.rows.map((r) => r.id)).toEqual(["export-otra-org"]);
+  });
+});
+
+describe("findExportsByOrg (F10a: nombre y lineCount)", () => {
+  it("nombre del usuario + conteo de líneas; sin fila de usuario → null y 0 líneas", async () => {
+    const tables = baseTables();
+    tables.set(authTables.user, [
+      {
+        id: "admin-01",
+        name: "Ana Administradora",
+        email: "ana@example.com",
+        emailVerified: false,
+        image: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    ]);
+    // Segundo export sin usuario ni ítems: nombre null, 0 líneas.
+    tables.get(schema.exports)?.push({
+      id: "export-huerfano",
+      organizationId: ORG,
+      documentCount: 0,
+      status: "pending",
+      requestedBy: "usuario-borrado",
+      createdAt: new Date("2026-02-13T10:00:00.000Z"),
+      completedAt: null,
+    });
+    const client = asClient(createFakeDb(tables));
+    const result = await client.findExportsByOrg(ORG, {
+      limit: 25,
+      offset: 0,
+    });
+    expect(result.total).toBe(2);
+    // Orden DESC: el huérfano (13 feb) antes que EXPORT (12 feb).
+    expect(result.rows[0]).toMatchObject({
+      id: "export-huerfano",
+      requestedByName: null,
+      lineCount: 0,
+    });
+    // EXPORT: 2 ítems (DOC_A con 2 líneas, DOC_B sin líneas).
+    expect(result.rows[1]).toMatchObject({
+      id: EXPORT,
+      requestedByName: "Ana Administradora",
+      lineCount: 2,
+    });
   });
 });

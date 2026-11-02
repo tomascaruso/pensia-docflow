@@ -110,6 +110,12 @@ describe("DuplicateCandidateList", () => {
     expect(onSelect.mock.calls[0]?.[0].id).toBe("c-1");
   });
 
+  it("F10a-FIX: botón Comparar lleva ícono ArrowRight", () => {
+    renderList({ rows: [makeRow("c-1")] });
+    const boton = screen.getByRole("button", { name: "Comparar" });
+    expect(boton.querySelector("svg")).not.toBeNull();
+  });
+
   it("paginación: Siguiente avanza, Anterior deshabilitado en página 1", async () => {
     const user = userEvent.setup();
     const onPageChange = vi.fn();

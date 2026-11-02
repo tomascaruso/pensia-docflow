@@ -23,6 +23,7 @@ import { buildApp } from "../app.js";
 import * as authTables from "../auth/tables.js";
 import * as schema from "../db/schema.js";
 import { createLocalStorage } from "../services/storage-local.js";
+import { DEFAULT_CSV_OPTIONS } from "../services/csv-generator.js";
 
 const PASSWORD = "Prueba-F0-1234";
 const ADMIN_EMAIL = "admin-f0-test@example.com";
@@ -58,6 +59,7 @@ describe.skipIf(!process.env.DOCFLOW_F0_TEST)(
     let rawDb: NodePgDatabase;
     let closePool: () => Promise<void>;
     let adminCookie = "";
+    let adminUserId = "";
     let reviewerCookie = "";
     let reviewerUserId = "";
     let storageDir = "";
@@ -190,6 +192,7 @@ describe.skipIf(!process.env.DOCFLOW_F0_TEST)(
         storage,
       });
       await signUp(ADMIN_EMAIL);
+      adminUserId = await userIdByEmail(ADMIN_EMAIL);
       adminCookie = await signIn(ADMIN_EMAIL);
       await signUp(REVIEWER_EMAIL);
       reviewerCookie = await signIn(REVIEWER_EMAIL);
@@ -316,7 +319,7 @@ describe.skipIf(!process.env.DOCFLOW_F0_TEST)(
       ]);
       await rawDb.insert(schema.documentDecisions).values({
         documentId: docFull,
-        decidedBy: "admin-f0",
+        decidedBy: adminUserId,
         decision: "approved",
         justification: null,
         decidedAt: new Date("2026-02-12T00:00:00Z"),
@@ -666,6 +669,16 @@ describe.skipIf(!process.env.DOCFLOW_F0_TEST)(
       expect(ok.statusCode).toBe(200);
       expect(ok.headers["content-type"]).toContain("text/csv");
       expect(ok.body).toContain("id;supplier_name;");
+      // Este fixture no tiene delimitadores ni saltos de línea en sus campos.
+      const csvLines = ok.body.replace(/^\uFEFF/u, "").trimEnd().split("\r\n");
+      expect(csvLines).toHaveLength(2);
+      const [header = "", row = ""] = csvLines;
+      const nameColumn = header.split(DEFAULT_CSV_OPTIONS.delimiter).indexOf("decided_by_name");
+      expect(nameColumn).toBeGreaterThanOrEqual(0);
+      const decidedByName = row.split(DEFAULT_CSV_OPTIONS.delimiter)[nameColumn];
+      expect(decidedByName).toBe("admin-f0-test");
+      expect(decidedByName).not.toBe(adminUserId);
+      expect(decidedByName).not.toBe("admin-f0");
     });
   },
 );

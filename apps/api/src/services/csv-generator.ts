@@ -76,6 +76,12 @@ export interface MainCsvRow {
   currency: string | null;
   totalAmount: string | null;
   approvedAt: string | null;
+  /**
+   * F10a-FIX — Nombre del usuario que decidió (mismo criterio que
+   * requestedByName en S7): el adaptador resuelve el id de la
+   * decisión contra la tabla `user` de Better Auth y cae al UUID
+   * cuando no hay fila. Se emite en la columna `decided_by_name`.
+   */
   decidedBy: string | null;
 }
 
@@ -97,7 +103,7 @@ const MAIN_HEADER = [
   "currency",
   "total_amount",
   "approved_at",
-  "decided_by",
+  "decided_by_name",
 ];
 
 const LINES_HEADER = [

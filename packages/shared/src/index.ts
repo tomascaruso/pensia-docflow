@@ -192,6 +192,18 @@ export interface Export {
   documentCount: number;
   status: ExportStatus;
   requestedBy?: string;
+  /**
+   * F10a — Nombre del usuario que pidió la exportación (join con
+   * la tabla `user` de Better Auth en el listado). null = usuario
+   * sin fila (borrado); ausente en respuestas viejas. El frontend
+   * cae al UUID truncado cuando no hay nombre.
+   */
+  requestedByName?: string | null;
+  /**
+   * F10a — Filas del CSV de líneas: total de líneas de extracción
+   * de los documentos de la exportación.
+   */
+  lineCount: number;
   createdAt: string | null;
   completedAt?: string | null;
 }

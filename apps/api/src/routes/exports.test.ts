@@ -721,3 +721,105 @@ describe("GET csv verifica export_documents (F0)", () => {
     await app.close();
   });
 });
+
+describe("GET /organizations/:orgId/exports (F10a)", () => {
+  it("lista con requestedByName y lineCount; sin fila de usuario → null", async () => {
+    const { app } = await buildTestApp(ADMIN, (t) => {
+      t.get(schema.organizationMembers)?.push({
+        id: "dm-org-01-admin-01",
+        organizationId: "org-01",
+        userId: "admin-01",
+        role: "org_admin",
+        joinedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+      t.get(authTables.member)?.push({
+        id: "pm-org-01-admin-01",
+        organizationId: "org-01",
+        userId: "admin-01",
+        role: "member",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      });
+      t.get(authTables.user)?.push({
+        id: "admin-01",
+        name: "Ana Administradora",
+        email: "admin@example.com",
+        emailVerified: false,
+        image: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+      t.get(schema.exports)?.push(
+        {
+          id: "export-con-nombre",
+          organizationId: "org-01",
+          documentCount: 1,
+          status: "pending",
+          requestedBy: "admin-01",
+          createdAt: new Date("2026-02-12T10:00:00.000Z"),
+          completedAt: null,
+        },
+        {
+          id: "export-sin-usuario",
+          organizationId: "org-01",
+          documentCount: 0,
+          status: "pending",
+          requestedBy: "usuario-borrado",
+          createdAt: new Date("2026-02-13T10:00:00.000Z"),
+          completedAt: null,
+        },
+      );
+      t.get(schema.exportItems)?.push({
+        id: "item-01",
+        exportId: "export-con-nombre",
+        documentId: "doc-01",
+      });
+      t.get(schema.extractionLines)?.push(
+        {
+          id: "line-01",
+          documentId: "doc-01",
+          lineNumber: 1,
+          description: "Servicio",
+          quantity: "1.0000",
+          unitPrice: "100.0000",
+          lineTotal: "100.0000",
+        },
+        {
+          id: "line-02",
+          documentId: "doc-01",
+          lineNumber: 2,
+          description: "Otro",
+          quantity: "2.0000",
+          unitPrice: "50.0000",
+          lineTotal: "100.0000",
+        },
+      );
+    });
+    await app.ready();
+    const res = await app.inject({
+      method: "GET",
+      url: "/organizations/org-01/exports",
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      exports: Array<{
+        id: string;
+        requestedByName: string | null;
+        lineCount: number;
+      }>;
+      total: number;
+    };
+    expect(body.total).toBe(2);
+    // Orden DESC: el del 13 feb primero.
+    expect(body.exports[0]).toMatchObject({
+      id: "export-sin-usuario",
+      requestedByName: null,
+      lineCount: 0,
+    });
+    expect(body.exports[1]).toMatchObject({
+      id: "export-con-nombre",
+      requestedByName: "Ana Administradora",
+      lineCount: 2,
+    });
+    await app.close();
+  });
+});

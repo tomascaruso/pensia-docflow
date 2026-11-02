@@ -30,6 +30,7 @@
 
 import { and, eq } from "drizzle-orm";
 import * as schema from "./schema.js";
+import { user as authUser } from "../auth/tables.js";
 import type {
   LinesCsvRow,
   MainCsvRow,
@@ -59,6 +60,20 @@ export interface ExportListRow {
   documentCount: number;
   status: string;
   requestedBy: string;
+  /**
+   * F10a — Nombre del usuario que pidió la exportación (join con
+   * la tabla `user` de Better Auth). null = usuario sin fila
+   * (borrado) o sin nombre legible; el frontend cae al UUID
+   * truncado, nunca inventa un nombre.
+   */
+  requestedByName: string | null;
+  /**
+   * F10a — Cantidad de filas del CSV de líneas: total de
+   * `extraction_lines` de los documentos de la exportación.
+   * (No hay columna `file` en export_items: el conteo es sobre
+   * las líneas reales, no sobre los ítems.)
+   */
+  lineCount: number;
   createdAt: Date | string | null;
   completedAt: Date | string | null;
 }
@@ -100,6 +115,54 @@ function toIsoDate(value: Date | string | null): string | null {
     return value.toISOString().slice(0, 10);
   }
   return value;
+}
+
+/**
+ * F10a — Nombre del usuario por id (tabla `user` de Better Auth).
+ * null si no hay fila (usuario borrado) o el nombre no es texto.
+ */
+async function findUserName(
+  db: CsvDrizzleClient,
+  userId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({ name: authUser.name })
+    .from(authUser)
+    .where(eq(authUser.id, userId))
+    .limit(1);
+  const row = rows[0];
+  return row === undefined ? null : asStringOrNull(row["name"]);
+}
+
+/**
+ * F10a — Filas del CSV de líneas de una exportación: total de
+ * `extraction_lines` de sus documentos. Mismo tope por documento
+ * que findLineRows (1000): una exportación con más líneas por
+ * documento vería el conteo truncado (MVP, documentado).
+ */
+async function countLineRows(
+  db: CsvDrizzleClient,
+  exportId: string,
+): Promise<number> {
+  const documentIds = await db
+    .select({ documentId: schema.exportItems.documentId })
+    .from(schema.exportItems)
+    .where(eq(schema.exportItems.exportId, exportId))
+    .limit(500);
+  let total = 0;
+  for (const row of documentIds) {
+    const documentId = asStringOrNull(row["documentId"]);
+    if (documentId === null) {
+      continue;
+    }
+    const lines = await db
+      .select({ id: schema.extractionLines.id })
+      .from(schema.extractionLines)
+      .where(eq(schema.extractionLines.documentId, documentId))
+      .limit(1000);
+    total += lines.length;
+  }
+  return total;
 }
 
 export function createExportCsvDrizzle(db: CsvDrizzleClient): {
@@ -245,6 +308,10 @@ export function createExportCsvDrizzle(db: CsvDrizzleClient): {
             documentCount: count,
             status,
             requestedBy,
+            // F10a: placeholders; el enriquecimiento real (nombre
+            // y lineCount) ocurre abajo, solo para la página.
+            requestedByName: null,
+            lineCount: 0,
             createdAt,
             completedAt: asDateOrNull(row["completedAt"]),
           },
@@ -260,7 +327,21 @@ export function createExportCsvDrizzle(db: CsvDrizzleClient): {
       const page = mapped
         .slice(input.offset, input.offset + input.limit)
         .map((entry) => entry.row);
-      return { rows: page, total };
+      // F10a — Enriquecimiento solo de la página devuelta (no de
+      // las 10.000 filas del fetch): nombre por id de usuario y
+      // conteo de líneas por exportación. Sin JOIN en SQL: el fake
+      // no tiene joins y `requested_by` es texto mientras `user.id`
+      // es uuid; las búsquedas por id + merge en JS siguen el
+      // patrón de los adaptadores de lectura de F0.
+      const enriched: ExportListRow[] = [];
+      for (const row of page) {
+        enriched.push({
+          ...row,
+          requestedByName: await findUserName(db, row.requestedBy),
+          lineCount: await countLineRows(db, row.id),
+        });
+      }
+      return { rows: enriched, total };
     },
 
     async findMainRows(exportId, organizationId) {
@@ -298,6 +379,17 @@ export function createExportCsvDrizzle(db: CsvDrizzleClient): {
           decision === undefined
             ? null
             : asStringOrNull(decision["decidedBy"]);
+        /**
+         * F10a-FIX — decided_by con nombre: mismo criterio que
+         * requestedByName (findUserName por id contra la tabla
+         * `user` de Better Auth). Sin fila → se mantiene el UUID
+         * (comportamiento previo para usuarios borrados); sin
+         * decisión → null (celda vacía, no inventada).
+         */
+        const decidedByName =
+          decidedBy === null
+            ? null
+            : ((await findUserName(db, decidedBy)) ?? decidedBy);
         const decidedAtRaw =
           decision === undefined ? null : decision["decidedAt"];
         const decidedAt =
@@ -323,7 +415,7 @@ export function createExportCsvDrizzle(db: CsvDrizzleClient): {
             currency: asStringOrNull(doc["currency"]),
             totalAmount: asStringOrNull(doc["totalAmount"]),
             approvedAt: decidedAt,
-            decidedBy,
+            decidedBy: decidedByName,
           },
           sortTime: toSortTime(
             createdAt instanceof Date || typeof createdAt === "string"

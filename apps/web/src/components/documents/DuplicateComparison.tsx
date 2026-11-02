@@ -2,10 +2,10 @@ import { useState } from "react";
 import type {
   DocumentDetailResponse,
   DuplicateCandidate,
-  MemberRole,
   Resolution,
 } from "@pensia-docflow/shared";
 import { Link } from "react-router-dom";
+import { Eye, Lock } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import {
@@ -20,7 +20,14 @@ interface DuplicateComparisonProps {
   current: DocumentDetailResponse | null;
   compared: DocumentDetailResponse | null;
   isPending: boolean;
-  role: MemberRole | null;
+  /**
+   * F10a — Puede autorizar la excepción de un duplicado exacto:
+   * org_admin o grant approve_documents vigente (GET
+   * /me/permissions). Antes era solo rol; un reviewer con grant
+   * quedaba injustamente bloqueado. El backend sigue siendo la
+   * autoridad (un 403 llega como toast en DuplicatesPage).
+   */
+  canApprove: boolean;
   orgId: string;
   onResolve: (input: ResolveCandidatePayload) => void;
   isResolving: boolean;
@@ -68,19 +75,24 @@ function fieldValue(
  * y cuándo. Acciones de resolución (líneas 277–294) y estados
  * deshabilitados A-07 (líneas 299–307): probable → "Es otro
  * comprobante" / "Es un duplicado"; exacto → "Es un duplicado" /
- * "Aceptar como excepción" solo org_admin (reviewer: botón
- * deshabilitado con el texto del spec). La justificación es
+ * "Aceptar como excepción" solo con approve_documents vigente
+ * (F10a: org_admin o grant; sin él, botón deshabilitado con el
+ * texto del spec). La justificación es
  * obligatoria: Confirmar deshabilitado hasta trim() !== ""
  * (patrón RejectDialog F6.1). Sin datos, "—": nunca se inventa
  * un valor. Presentacional: la mutación vive en useResolveCandidate
- * (la misma acción que S5) y la pasa DuplicatesPage.
+ * (la misma acción que S5) y la pasa DuplicatesPage. F10a-FIX:
+ * el botón de excepción deshabilitado es inconfundible (outline +
+ * borde punteado + candado + texto "(solo admin)"), no solo el
+ * opacity-50 de shadcn; los links "Ver documento…" son botones
+ * outline con ícono Eye (polish 4).
  */
 export function DuplicateComparison({
   candidate,
   current,
   compared,
   isPending,
-  role,
+  canApprove,
   orgId,
   onResolve,
   isResolving,
@@ -151,7 +163,6 @@ export function DuplicateComparison({
     },
   ];
 
-  const isAdmin = role === "org_admin";
   const isExact = candidate.kind === "business_exact";
 
   function startResolve(resolution: Resolution) {
@@ -207,19 +218,19 @@ export function DuplicateComparison({
           ))}
         </tbody>
       </table>
-      <div className="flex gap-4 text-sm">
-        <Link
-          to={`/o/${orgId}/documentos/${candidate.documentId}`}
-          className="text-blue-600 underline"
-        >
-          Ver documento actual en revisión
-        </Link>
-        <Link
-          to={`/o/${orgId}/documentos/${candidate.candidateDocumentId}`}
-          className="text-blue-600 underline"
-        >
-          Ver documento comparado en revisión
-        </Link>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" asChild>
+          <Link to={`/o/${orgId}/documentos/${candidate.documentId}`}>
+            <Eye className="h-4 w-4 mr-1" aria-hidden />
+            Ver documento actual en revisión
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link to={`/o/${orgId}/documentos/${candidate.candidateDocumentId}`}>
+            <Eye className="h-4 w-4 mr-1" aria-hidden />
+            Ver documento comparado en revisión
+          </Link>
+        </Button>
       </div>
 
       {candidate.status !== "pending" && (
@@ -252,15 +263,26 @@ export function DuplicateComparison({
             </Button>
             {isExact && (
               <Button
-                variant="default"
-                disabled={!isAdmin}
+                variant={canApprove ? "default" : "outline"}
+                size="sm"
+                disabled={!canApprove}
                 onClick={() => startResolve("overridden")}
+                className={
+                  !canApprove
+                    ? "cursor-not-allowed border-dashed text-muted-foreground"
+                    : ""
+                }
               >
-                Aceptar como excepción
+                {!canApprove && (
+                  <Lock className="h-4 w-4 mr-1" aria-hidden />
+                )}
+                {canApprove
+                  ? "Aceptar como excepción"
+                  : "Aceptar como excepción (solo admin)"}
               </Button>
             )}
           </div>
-          {isExact && !isAdmin && (
+          {isExact && !canApprove && (
             <p className="text-sm text-slate-500">
               Solo un administrador puede aceptar la excepción de un
               duplicado exacto.

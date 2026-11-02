@@ -231,9 +231,11 @@ describe("DuplicatesPage", () => {
       expect(screen.getByText("doc-01.pdf")).toBeInTheDocument(),
     );
     await user.click(screen.getByRole("button", { name: "Comparar" }));
-    expect(
-      screen.getByRole("button", { name: "Aceptar como excepción" }),
-    ).toBeDisabled();
+    const boton = screen.getByRole("button", {
+      name: /aceptar como excepción/i,
+    });
+    expect(boton).toBeDisabled();
+    expect(boton).toHaveTextContent(/solo admin/i);
     expect(
       screen.getByText(
         "Solo un administrador puede aceptar la excepción de un duplicado exacto.",
@@ -268,5 +270,33 @@ describe("DuplicatesPage", () => {
         ),
       ).toBe(true),
     );
+  });
+
+  it("F10a: reviewer con grant approve_documents → excepción habilitada", async () => {
+    const user = userEvent.setup();
+    const { fetchMock: base } = standardFetch(
+      [
+        makeCandidate({
+          kind: "business_exact",
+          reasonCode: "BUSINESS_EXACT",
+        }),
+      ],
+      1,
+    );
+    const fetchMock = async (url: string, init?: RequestInit) => {
+      if (url.includes("/me/permissions")) {
+        return jsonResponse(200, { permissions: ["approve_documents"] });
+      }
+      void init;
+      return base(url);
+    };
+    renderPage("reviewer", fetchMock);
+    await waitFor(() =>
+      expect(screen.getByText("doc-01.pdf")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: "Comparar" }));
+    expect(
+      screen.getByRole("button", { name: "Aceptar como excepción" }),
+    ).toBeEnabled();
   });
 });

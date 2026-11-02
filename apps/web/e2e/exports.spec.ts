@@ -5,6 +5,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 const API = "http://127.0.0.1:3001";
 const ORIGIN = { Origin: "http://localhost:5173" };
 const ADMIN_EMAIL = "admin-e2e-f8@example.com";
+const EMPTY_REVIEWER_EMAIL = "reviewer-empty-e2e-f8@example.com";
 const PASSWORD = "Prueba-E2E-1234";
 
 /**
@@ -192,6 +193,8 @@ test.describe("S7 Exportaciones", () => {
     if (orgId !== "") {
       cleanupF8(orgId);
     }
+    psql(`DELETE FROM "member" WHERE user_id IN (SELECT id FROM "user" WHERE email = '${EMPTY_REVIEWER_EMAIL}');
+      DELETE FROM "user" WHERE email = '${EMPTY_REVIEWER_EMAIL}';`);
   });
 
   async function login(page: Page) {
@@ -201,6 +204,93 @@ test.describe("S7 Exportaciones", () => {
     await page.getByRole("button", { name: "Ingresar" }).click();
     await expect(page).toHaveURL(new RegExp(`/o/${orgId}$`));
   }
+
+  test("Estado vacío sin permiso: ambos botones disabled y diálogo cerrado", async ({
+    page,
+    request,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const invitation = await request.post(`${API}/organizations/${orgId}/invitations`, {
+      headers: { ...ORIGIN, cookie },
+      data: { email: EMPTY_REVIEWER_EMAIL },
+    });
+    expect(invitation.status()).toBe(201);
+    const invitationId = ((await invitation.json()) as { id: string }).id;
+    const signup = await request.post(`${API}/api/auth/sign-up/email`, {
+      headers: ORIGIN,
+      data: { name: "Revisor sin exportación", email: EMPTY_REVIEWER_EMAIL, password: PASSWORD },
+    });
+    expect(signup.ok()).toBeTruthy();
+    const signin = await request.post(`${API}/api/auth/sign-in/email`, {
+      headers: ORIGIN,
+      data: { email: EMPTY_REVIEWER_EMAIL, password: PASSWORD },
+    });
+    expect(signin.ok()).toBeTruthy();
+    const reviewerCookie = parseSessionCookie(signin.headers()["set-cookie"]);
+    expect(reviewerCookie).toBeDefined();
+    const accepted = await request.post(`${API}/organizations/${orgId}/invitations/${invitationId}/accept`, {
+      headers: { ...ORIGIN, cookie: reviewerCookie as string },
+    });
+    expect(accepted.status()).toBe(200);
+    const permissions = await request.get(`${API}/me/permissions?orgId=${orgId}`, {
+      headers: { ...ORIGIN, cookie: reviewerCookie as string },
+    });
+    expect(permissions.status()).toBe(200);
+    expect((await permissions.json()).permissions).toEqual([]);
+
+    await page.goto("/login");
+    await page.getByLabel("Correo electrónico").fill(EMPTY_REVIEWER_EMAIL);
+    await page.getByLabel("Contraseña").fill(PASSWORD);
+    await page.getByRole("button", { name: "Ingresar" }).click();
+    await expect(page).toHaveURL(new RegExp(`/o/${orgId}$`));
+    await page.goto(`/o/${orgId}/exportaciones`);
+    await expect(page.getByText("Todavía no hay exportaciones")).toBeVisible();
+    await expect(page.getByText("No tenés el permiso de exportación. Pedíselo a un administrador de tu organización.")).toBeVisible();
+    const buttons = page.getByRole("button", { name: "Nueva exportación", exact: true });
+    await expect(buttons).toHaveCount(2);
+    const createRequests: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "POST" && new URL(req.url()).pathname.endsWith("/exports")) {
+        createRequests.push(req.url());
+      }
+    });
+    for (const button of await buttons.all()) {
+      await expect(button).toBeDisabled();
+      await expect(button).toHaveAttribute("data-variant", "outline");
+      await expect(button).toHaveClass(/border-dashed/);
+      await expect(button).toHaveClass(/text-muted-foreground/);
+      await expect(button.locator('svg[aria-hidden="true"]')).toBeVisible();
+      const bounds = await button.boundingBox();
+      expect(bounds).not.toBeNull();
+      await page.mouse.click(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2);
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    }
+    expect(createRequests).toEqual([]);
+    await page.waitForTimeout(600);
+    const path = testInfo.outputPath("empty-without-permission.png");
+    await page.screenshot({ path });
+    await testInfo.attach("Estado vacío sin permiso", { path, contentType: "image/png" });
+  });
+
+  test("Estado vacío autorizado: ambos accesos abren el diálogo", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await login(page);
+    await page.goto(`/o/${orgId}/exportaciones`);
+    await expect(page.getByText("Todavía no hay exportaciones")).toBeVisible();
+    const buttons = page.getByRole("button", { name: "Nueva exportación", exact: true });
+    await expect(buttons).toHaveCount(2);
+    for (const button of await buttons.all()) await expect(button).toBeEnabled();
+    await page.waitForTimeout(600);
+    const path = testInfo.outputPath("empty-authorized.png");
+    await page.screenshot({ path });
+    await testInfo.attach("Estado vacío autorizado", { path, contentType: "image/png" });
+    for (const index of [0, 1]) {
+      await buttons.nth(index).click();
+      await expect(page.getByRole("dialog", { name: "Nueva exportación" })).toBeVisible();
+      await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    }
+  });
 
   test("Crear una exportación desde el diálogo y verla en la lista", async ({
     page,

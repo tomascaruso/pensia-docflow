@@ -412,7 +412,7 @@ describe.skipIf(!process.env.DOCFLOW_B6_TEST)(
       );
       expect(main.body.charCodeAt(0)).toBe(0xfeff);
       expect(main.body).toContain(
-        "id;supplier_name;supplier_tax_id;invoice_number;issue_date;currency;total_amount;approved_at;decided_by",
+        "id;supplier_name;supplier_tax_id;invoice_number;issue_date;currency;total_amount;approved_at;decided_by_name",
       );
       expect(main.body).toContain("Proveedor Ficticio Uno S.A.");
       expect(main.body).toContain("121000.0000");

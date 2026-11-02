@@ -27,8 +27,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { buildApp } from "../app.js";
 import * as schema from "../db/schema.js";
-import { createLocalStorage } from "../services/storage-local.js";
-import type { StorageProvider } from "../services/storage-provider.js";
+import { createLocalStorage, type LocalStorage } from "../services/storage-local.js";
 
 const PASSWORD = "Prueba-F5-1234";
 const ADMIN_EMAIL = "admin-f5-test@example.com";
@@ -56,7 +55,7 @@ describe.skipIf(!process.env.DOCFLOW_F5_TEST)(
     let rawDb: NodePgDatabase;
     let closePool: () => Promise<void>;
     let storageDir = "";
-    let storage: StorageProvider;
+    let storage: LocalStorage;
     let adminCookie = "";
     let otherCookie = "";
     let orgId = "";

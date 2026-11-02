@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { ArrowRight, Search } from "lucide-react";
 import type {
   CandidateKind,
   DuplicateCandidate,
@@ -237,7 +237,7 @@ export function DuplicateCandidateList({
 
       {!isError && !isPending && rows.length > 0 && (
         <>
-          <table className="w-full table-fixed border-collapse border border-border text-sm">
+          <table className="w-full table-auto border-collapse border border-border text-sm">
             <colgroup>
               <col style={{ width: "20%" }} />
               <col style={{ width: "20%" }} />
@@ -317,6 +317,7 @@ export function DuplicateCandidateList({
                         onClick={() => onSelect(candidate)}
                       >
                         Comparar
+                        <ArrowRight className="h-4 w-4 ml-1" aria-hidden />
                       </Button>
                     </td>
                   </tr>
