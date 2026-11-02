@@ -5,7 +5,7 @@ const ADMIN_EMAIL = "admin-e2e-f4-docs@example.com";
 
 /**
  * E2E F4 — S2 Documentos por UI: navegar, ver tabla, filtrar por
- * estado, buscar, paginar, y botón Cargar deshabilitado. Siembra por
+ * estado, buscar, paginar y navegar a la carga S4. Siembra por
  * API + SQL (ver f4-documents.ts); limpieza al final para no ensuciar
  * docflow_dev.
  */
@@ -39,10 +39,6 @@ test.describe("S2 Documentos", () => {
     await expect(page.getByText("Requiere revisión").first()).toBeVisible();
     // Duplicados: los dos más recientes tienen 1 pendiente.
     await expect(page.getByText("1 pendiente").first()).toBeVisible();
-    // Botón Cargar deshabilitado.
-    const upload = page.getByRole("button", { name: "Cargar documento" });
-    await expect(upload).toBeDisabled();
-
     // Filtro por estado: Aprobado → 10.
     const statusTrigger = page.getByRole("combobox", { name: "Estado" });
     await statusTrigger.click();
@@ -66,5 +62,14 @@ test.describe("S2 Documentos", () => {
     await page.getByRole("button", { name: "Siguiente" }).click();
     await expect(page.getByText("Mostrando 26–30 de 30")).toBeVisible();
     await expect(page.getByRole("button", { name: "Siguiente" })).toBeDisabled();
+
+    // La carga implementada se abre desde el enlace de S2 a S4.
+    const upload = page.getByRole("link", { name: "Cargar documento", exact: true });
+    await expect(upload).toBeVisible();
+    await expect(upload).toHaveAttribute("href", `/o/${orgId}/documentos/nuevo`);
+    await upload.click();
+    await expect(page).toHaveURL(new RegExp(`/o/${orgId}/documentos/nuevo$`));
+    await expect(page.getByRole("heading", { name: "Cargar documento", exact: true })).toBeVisible();
+    await expect(page.getByText("Subí una factura o recibo para procesarlo.")).toBeVisible();
   });
 });

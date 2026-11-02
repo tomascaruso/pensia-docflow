@@ -27,9 +27,15 @@ test.describe("S3 Revisiones pendientes", () => {
     await page.getByLabel("Contraseña").fill(PASSWORD);
     await page.getByRole("button", { name: "Ingresar" }).click();
     await expect(page).toHaveURL(new RegExp(`/o/${orgId}$`));
-    await page
-      .getByRole("link", { name: "Revisiones pendientes", exact: true })
-      .click();
+    const reviews = page
+      .getByRole("navigation", { name: "Principal", exact: true })
+      .getByRole("link", { name: /^Revisiones pendientes\b/ });
+    await expect(reviews).toHaveCount(1);
+    await expect(reviews).toHaveAttribute("href", `/o/${orgId}/revisiones`);
+    const reviewCount = reviews.getByLabel("10 revisiones pendientes", { exact: true });
+    await expect(reviewCount).toBeVisible();
+    await expect(reviewCount).toHaveText("10");
+    await reviews.click();
     await expect(page).toHaveURL(new RegExp(`/o/${orgId}/revisiones$`));
     await expect(page.getByText("10 pendientes")).toBeVisible();
     await expect(page.getByText("Requiere revisión").first()).toBeVisible();
@@ -37,6 +43,9 @@ test.describe("S3 Revisiones pendientes", () => {
     await expect(page.getByRole("link", { name: "Revisar" }).first()).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Cargar documento" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "Cargar documento" }),
     ).toHaveCount(0);
     // Sin filtro de estado visible (está fijo); quitar el chip → S2.
     await page
