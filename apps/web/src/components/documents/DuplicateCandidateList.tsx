@@ -237,7 +237,7 @@ export function DuplicateCandidateList({
 
       {!isError && !isPending && rows.length > 0 && (
         <>
-          <table className="w-full table-fixed border-collapse border border-border text-sm">
+          <table className="w-full table-auto border-collapse border border-border text-sm">
             <colgroup>
               <col style={{ width: "20%" }} />
               <col style={{ width: "20%" }} />

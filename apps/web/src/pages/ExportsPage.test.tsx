@@ -56,6 +56,7 @@ function renderPage(options: {
   createStatus?: number;
   role?: "org_admin" | "reviewer";
   permissions?: string[];
+  emptyExports?: boolean;
 }) {
   const calls: { url: string; method: string; body: unknown }[] = [];
   const client = new QueryClient({
@@ -127,8 +128,8 @@ function renderPage(options: {
           });
         }
         return jsonResponse(200, {
-          exports: [exportRow("exp-1", "completed")],
-          total: 1,
+          exports: options.emptyExports ? [] : [exportRow("exp-1", "completed")],
+          total: options.emptyExports ? 0 : 1,
           limit: 25,
           offset: 0,
         });
@@ -141,6 +142,43 @@ function renderPage(options: {
 }
 
 describe("ExportsPage", () => {
+  it("vacía: reviewer sin permiso tiene ambos accesos disabled y diálogo cerrado", async () => {
+    const user = userEvent.setup();
+    const { calls } = renderPage({ role: "reviewer", permissions: [], emptyExports: true });
+    await screen.findByText("Todavía no hay exportaciones");
+    await screen.findByText("No tenés el permiso de exportación. Pedíselo a un administrador de tu organización.");
+    const buttons = screen.getAllByRole("button", { name: "Nueva exportación" });
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("data-variant", "outline");
+      expect(button).toHaveClass("border-dashed", "text-muted-foreground");
+      expect(button.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+      await user.click(button);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    }
+    expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
+  });
+
+  it.each([
+    { role: "org_admin" as const, permissions: [] },
+    { role: "reviewer" as const, permissions: ["export_documents"] },
+  ])("vacía: $role autorizado abre el diálogo desde ambos accesos", async (authorization) => {
+    const user = userEvent.setup();
+    renderPage({ ...authorization, emptyExports: true });
+    await screen.findByText("Todavía no hay exportaciones");
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Nueva exportación" })).toHaveLength(2));
+    for (const index of [0, 1]) {
+      const buttons = screen.getAllByRole("button", { name: "Nueva exportación" });
+      expect(buttons[0]).toBeEnabled();
+      expect(buttons[1]).toBeEnabled();
+      await user.click(buttons[index]);
+      expect(await screen.findByRole("dialog", { name: "Nueva exportación" })).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "Cancelar" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    }
+  });
+
   it("loading muestra el esqueleto", () => {
     renderPage({});
     expect(
@@ -309,6 +347,13 @@ describe("ExportsPage", () => {
     });
     expect(boton).toBeDisabled();
     expect(boton.querySelector("svg")).not.toBeNull();
+  });
+
+  it("F10a-FIX-2: Nueva exportación conserva disabled y borde discontinuo sin permiso", async () => {
+    renderPage({ role: "reviewer", permissions: [] });
+    const button = screen.getByRole("button", { name: "Nueva exportación" });
+    await waitFor(() => expect(button).toBeDisabled());
+    expect(button).toHaveClass("border-dashed");
   });
 
   it("F10a-FIX: reviewer con grant export_documents → botón Nueva exportación sin candado", async () => {

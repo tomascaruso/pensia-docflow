@@ -219,6 +219,64 @@ test.describe("S6 Duplicados", () => {
     ).toBeVisible();
   });
 
+  test("Comparar e ícono quedan dentro de la tabla sin recorte", async ({ page, request }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await goToDuplicates(page, request);
+    await page.waitForTimeout(600);
+
+    const buttons = page.getByRole("button", { name: "Comparar", exact: true });
+    expect(await buttons.count()).toBeGreaterThan(0);
+    for (const button of await buttons.all()) {
+      await expect(button).toBeVisible();
+      await expect(button.locator("svg")).toBeVisible();
+      const violations = await button.evaluate((element) => {
+        const tolerance = 1;
+        const errors: string[] = [];
+        const table = element.closest("table");
+        const cell = element.closest("td");
+        const icon = element.querySelector("svg");
+        if (!table || !cell || !icon) return ["Faltan tabla, celda o ícono"];
+        const contains = (outer: DOMRect, inner: DOMRect, label: string) => {
+          if (inner.left < outer.left - tolerance || inner.right > outer.right + tolerance ||
+              inner.top < outer.top - tolerance || inner.bottom > outer.bottom + tolerance) {
+            errors.push(label);
+          }
+        };
+        const buttonRect = element.getBoundingClientRect();
+        const iconRect = icon.getBoundingClientRect();
+        contains(table.getBoundingClientRect(), buttonRect, "Botón fuera de tabla");
+        contains(table.getBoundingClientRect(), iconRect, "Ícono fuera de tabla");
+        contains(cell.getBoundingClientRect(), buttonRect, "Botón fuera de celda");
+        contains(buttonRect, iconRect, "Ícono fuera del botón");
+        const viewport = new DOMRect(0, 0, document.documentElement.clientWidth, window.innerHeight);
+        contains(viewport, table.getBoundingClientRect(), "Tabla fuera del viewport");
+        contains(viewport, buttonRect, "Botón fuera del viewport");
+        if (iconRect.width < 15 || iconRect.height < 15) errors.push("Ícono encogido");
+        if (element.scrollWidth > element.clientWidth + tolerance) errors.push("Contenido desborda botón");
+        if (cell.scrollWidth > cell.clientWidth + tolerance) errors.push("Contenido desborda celda");
+        for (const target of [element, icon]) {
+          const rect = target.getBoundingClientRect();
+          for (let parent = target.parentElement; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent);
+            const bounds = parent.getBoundingClientRect();
+            const left = bounds.left + parent.clientLeft;
+            const top = bounds.top + parent.clientTop;
+            if (/^(hidden|clip|scroll|auto)$/.test(style.overflowX) &&
+                (rect.left < left - tolerance || rect.right > left + parent.clientWidth + tolerance)) {
+              errors.push(`Recorte horizontal por ${parent.tagName}`);
+            }
+            if (/^(hidden|clip|scroll|auto)$/.test(style.overflowY) &&
+                (rect.top < top - tolerance || rect.bottom > top + parent.clientHeight + tolerance)) {
+              errors.push(`Recorte vertical por ${parent.tagName}`);
+            }
+          }
+        }
+        return errors;
+      });
+      expect(violations).toEqual([]);
+    }
+  });
+
   test("Abrir detalle comparativo de un candidato", async ({
     page,
     request,

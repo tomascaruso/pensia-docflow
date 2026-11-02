@@ -133,7 +133,7 @@ export function ExportsPage() {
           disabled={!canExport}
           variant={canExport ? "default" : "outline"}
           className={
-            !canExport ? "cursor-not-allowed text-muted-foreground" : ""
+            !canExport ? "cursor-not-allowed border-dashed text-muted-foreground" : ""
           }
         >
           {!canExport && <Lock className="h-4 w-4 mr-1" aria-hidden />}

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { Export } from "@pensia-docflow/shared";
 import { ExportsTable } from "./ExportsTable";
 
@@ -31,6 +32,42 @@ function exportRow(overrides: Partial<Export> = {}): Export {
 }
 
 describe("ExportsTable", () => {
+  it("vacío sin permiso: disabled, outline, candado y callback bloqueado", async () => {
+    const user = userEvent.setup();
+    const onCreateClick = vi.fn();
+    render(
+      <ExportsTable {...BASE_PROPS} exports={[]} total={0}
+        isPending={false} isError={false} canExport={false}
+        onCreateClick={onCreateClick} />,
+    );
+    const button = screen.getByRole("button", { name: "Nueva exportación" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("data-variant", "outline");
+    expect(button).toHaveClass("border-dashed", "text-muted-foreground", "cursor-not-allowed");
+    expect(button.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    await user.click(button);
+    await user.tab();
+    await user.keyboard("{Enter}{Space}");
+    expect(onCreateClick).not.toHaveBeenCalled();
+  });
+
+  it("vacío con permiso: habilitado y callback invocado", async () => {
+    const user = userEvent.setup();
+    const onCreateClick = vi.fn();
+    render(
+      <ExportsTable {...BASE_PROPS} exports={[]} total={0}
+        isPending={false} isError={false} canExport={true}
+        onCreateClick={onCreateClick} />,
+    );
+    const button = screen.getByRole("button", { name: "Nueva exportación" });
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute("data-variant", "default");
+    expect(button).not.toHaveClass("border-dashed");
+    expect(button.querySelector("svg")).toBeNull();
+    await user.click(button);
+    expect(onCreateClick).toHaveBeenCalledTimes(1);
+  });
+
   it("render con columnas del spec y enlaces de descarga", () => {
     render(
       <ExportsTable
