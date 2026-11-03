@@ -98,8 +98,8 @@ function makeHarness(): Harness {
         createdAt: new Date("2026-02-12T10:00:00.000Z"),
         completedAt: null,
       }),
-      findMainRows: async () => mainRows(),
-      findLineRows: async () => lineRows(),
+      findMainRows: () => mainRows(),
+      findLineRows: () => lineRows(),
     },
     audit: async (input) => {
       if (input.action === "export.downloaded" && throwOnDownloaded) {
@@ -128,6 +128,26 @@ function makeHarness(): Harness {
 }
 
 describe("generateExportCsv", () => {
+  it("F11a: detiene la fuente paginada y no audita éxito al exceder tamaño", async () => {
+    const harness = makeHarness();
+    let consumed = 0, closed = false;
+    harness.deps.csv.findLineRows = async function* () {
+      try {
+        for (let n = 1; n <= 1001; n++) {
+          consumed++;
+          yield { ...lineRows()[0], lineNumber: n };
+        }
+      } finally { closed = true; }
+    };
+    harness.deps.options = { maxBytes: 150 };
+    await expect(generateExportCsv(harness.deps, {
+      organizationId: ORG, exportId: EXPORT_ID, file: "lines", actorUserId: "admin-01",
+    })).rejects.toBeInstanceOf(ExportTooLargeError);
+    expect(consumed).toBeLessThan(1001);
+    expect(closed).toBe(true);
+    expect(harness.audits.map(e => e.action)).toEqual(["export.generation_failed"]);
+  });
+
   it("main: buffer con header, nombre PD-09 y auditoría de éxito", async () => {
     const harness = makeHarness();
     const result = await generateExportCsv(harness.deps, {

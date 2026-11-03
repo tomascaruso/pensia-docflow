@@ -1,50 +1,33 @@
 /**
- * DocFlow B6 — Adaptador de lectura para CSV.
- *
- * Lee lo que el generador necesita: detalles de la exportación,
- * lista paginada por organización, filas principales (documentos +
- * decisiones) y filas de líneas. No escribe nada.
- *
- * Restricciones del fake (heredadas de B5): solo eq/and/isNull,
- * select con where+limit, sin inArray, sin orderBy, sin offset, sin
- * agregados. Por eso el listado NO usa ORDER BY, OFFSET ni COUNT
- * en SQL: trae las exportaciones de la org en un único fetch con
- * tope EXPORT_LIST_FETCH_CAP, ordena en JS por createdAt DESC
- * (desempate id ASC) y pagina con slice; el total es la cantidad
- * filtrada dentro del tope. Limitación documentada: orgs con más
- * de 10.000 exportaciones verían el listado truncado (MVP: fuera
- * de escala realista; el arreglo futuro es paginación SQL cuando
- * el fake soporte offset/orderBy).
- *
- * Orden: `export_items` no tiene columna de orden, así que las filas
- * se ordenan en JS (documentos por createdAt ASC + id; líneas por
- * createdAt del documento + lineNumber).
- *
- * Fail-closed: un documento sin id/org/status legible lanza un
- * Error (nunca se salta la fila). Una decisión ausente para un
- * documento aprobado se emite con approved_at/decided_by nulos:
- * B5 la inserta en la misma tx que el cambio de estado, así que su
- * ausencia es corrupción visible como vacío, no dato inventado.
- * supplier_tax_id y description nulos → celda vacía en el CSV.
+ * Lectura CSV F11a: documentos por (created_at, id), líneas por line_number,
+ * con keyset y páginas acotadas. Los iteradores no acumulan páginas; el
+ * serializador deja de consumirlos cuando supera el presupuesto UTF-8.
+ * El listado de exportaciones conserva su tope histórico independiente;
+ * lineCount se calcula íntegramente en PostgreSQL.
  */
-
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt, or, sql } from "drizzle-orm";
 import * as schema from "./schema.js";
+import { alias } from "drizzle-orm/pg-core";
 import { user as authUser } from "../auth/tables.js";
 import type {
   LinesCsvRow,
   MainCsvRow,
 } from "../services/csv-generator.js";
 
-export interface CsvDrizzleClient {
-  select(fields: Record<string, unknown>): {
-    from(table: unknown): {
-      where(condition: unknown): Promise<Array<Record<string, unknown>>> & {
-        limit(n: number): Promise<Array<Record<string, unknown>>>;
-      };
-    };
-  };
+type CsvRowsResult = Array<Record<string, unknown>>;
+interface CsvWhere extends Promise<CsvRowsResult> {
+  limit(n: number): Promise<CsvRowsResult>;
+  orderBy(...order: unknown[]): { limit(n: number): Promise<CsvRowsResult> };
 }
+interface CsvSource {
+  leftJoin(table: unknown, condition: unknown): CsvSource;
+  where(condition: unknown): CsvWhere;
+}
+export interface CsvDrizzleClient {
+  select(fields: Record<string, unknown>): { from(table: unknown): CsvSource };
+}
+
+export const EXPORT_READ_PAGE_SIZE = 250;
 
 export interface ExportDetails {
   id: string;
@@ -134,35 +117,18 @@ async function findUserName(
   return row === undefined ? null : asStringOrNull(row["name"]);
 }
 
-/**
- * F10a — Filas del CSV de líneas de una exportación: total de
- * `extraction_lines` de sus documentos. Mismo tope por documento
- * que findLineRows (1000): una exportación con más líneas por
- * documento vería el conteo truncado (MVP, documentado).
+/** Agregación SQL: no materializa líneas para contarlas. La organización
+ * también se califica aquí, además del filtro del listado de exportaciones.
  */
-async function countLineRows(
-  db: CsvDrizzleClient,
-  exportId: string,
-): Promise<number> {
-  const documentIds = await db
-    .select({ documentId: schema.exportItems.documentId })
-    .from(schema.exportItems)
-    .where(eq(schema.exportItems.exportId, exportId))
-    .limit(500);
-  let total = 0;
-  for (const row of documentIds) {
-    const documentId = asStringOrNull(row["documentId"]);
-    if (documentId === null) {
-      continue;
-    }
-    const lines = await db
-      .select({ id: schema.extractionLines.id })
-      .from(schema.extractionLines)
-      .where(eq(schema.extractionLines.documentId, documentId))
-      .limit(1000);
-    total += lines.length;
-  }
-  return total;
+async function countLineRows(db: CsvDrizzleClient, exportId: string, organizationId: string): Promise<number> {
+  const rows = await db.select({ count: sql`count(*)` })
+    .from(schema.extractionLines)
+    .leftJoin(schema.exportItems, eq(schema.extractionLines.documentId, schema.exportItems.documentId))
+    .leftJoin(schema.documents, eq(schema.extractionLines.documentId, schema.documents.id))
+    .where(and(eq(schema.exportItems.exportId, exportId), eq(schema.documents.organizationId, organizationId)));
+  const value = Number(rows[0]?.["count"]);
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error("export-csv-drizzle: conteo de líneas inválido.");
+  return value;
 }
 
 export function createExportCsvDrizzle(db: CsvDrizzleClient): {
@@ -174,56 +140,44 @@ export function createExportCsvDrizzle(db: CsvDrizzleClient): {
     organizationId: string,
     input: { limit: number; offset: number; status?: string },
   ): Promise<{ rows: ExportListRow[]; total: number }>;
-  findMainRows(exportId: string, organizationId: string): Promise<MainCsvRow[]>;
+  findMainRows(exportId: string, organizationId: string): AsyncIterable<MainCsvRow>;
   findLineRows(
     exportId: string,
     organizationId: string,
-  ): Promise<LinesCsvRow[]>;
+  ): AsyncIterable<LinesCsvRow>;
 } {
-  async function findItemDocumentIds(
-    exportId: string,
-  ): Promise<string[]> {
-    const rows = await db
-      .select({ documentId: schema.exportItems.documentId })
-      .from(schema.exportItems)
-      .where(eq(schema.exportItems.exportId, exportId))
-      .limit(500);
-    const ids: string[] = [];
-    for (const row of rows) {
-      const documentId = asStringOrNull(row["documentId"]);
-      if (documentId !== null) {
-        ids.push(documentId);
+  async function* documents(exportId: string, organizationId: string): AsyncGenerator<Record<string, unknown>> {
+    let cursor: string | undefined;
+    const bookmark = alias(schema.documents, "csv_document_cursor");
+    for (;;) {
+      const after = cursor === undefined ? undefined : or(
+        gt(schema.documents.createdAt, bookmark.createdAt),
+        and(eq(schema.documents.createdAt, bookmark.createdAt), gt(schema.documents.id, bookmark.id)),
+      );
+      let source = db.select({
+        id: schema.documents.id, organizationId: schema.documents.organizationId,
+        status: schema.documents.status, supplierName: schema.documents.supplierName,
+        supplierTaxId: schema.documents.supplierTaxId, invoiceNumber: schema.documents.invoiceNumber,
+        issueDate: schema.documents.issueDate, currency: schema.documents.currency,
+        totalAmount: schema.documents.totalAmount, createdAt: schema.documents.createdAt,
+      }).from(schema.exportItems)
+        .leftJoin(schema.documents, and(eq(schema.exportItems.documentId, schema.documents.id), eq(schema.documents.organizationId, organizationId)));
+      // Comparar el timestamp original en SQL conserva sus microsegundos.
+      if (cursor !== undefined) source = source.leftJoin(bookmark, eq(bookmark.id, cursor));
+      const page = await source.where(and(eq(schema.exportItems.exportId, exportId), after))
+        .orderBy(asc(schema.documents.createdAt), asc(schema.documents.id))
+        .limit(EXPORT_READ_PAGE_SIZE);
+      for (const row of page) {
+        const id = asStringOrNull(row["id"]), createdAt = asDateOrNull(row["createdAt"]);
+        if (id === null || row["organizationId"] !== organizationId || row["status"] !== "approved" ||
+          createdAt === null || !Number.isFinite(new Date(createdAt).getTime())) {
+          throw new Error("export-csv-drizzle: fila de documento inválida en la exportación.");
+        }
+        yield row;
+        cursor = id;
       }
+      if (page.length < EXPORT_READ_PAGE_SIZE) return;
     }
-    return ids;
-  }
-
-  async function findDocumentRow(
-    documentId: string,
-    organizationId: string,
-  ): Promise<Record<string, unknown> | null> {
-    const rows = await db
-      .select({
-        id: schema.documents.id,
-        organizationId: schema.documents.organizationId,
-        status: schema.documents.status,
-        supplierName: schema.documents.supplierName,
-        supplierTaxId: schema.documents.supplierTaxId,
-        invoiceNumber: schema.documents.invoiceNumber,
-        issueDate: schema.documents.issueDate,
-        currency: schema.documents.currency,
-        totalAmount: schema.documents.totalAmount,
-        createdAt: schema.documents.createdAt,
-      })
-      .from(schema.documents)
-      .where(
-        and(
-          eq(schema.documents.id, documentId),
-          eq(schema.documents.organizationId, organizationId),
-        ),
-      )
-      .limit(1);
-    return rows[0] ?? null;
   }
 
   return {
@@ -327,181 +281,61 @@ export function createExportCsvDrizzle(db: CsvDrizzleClient): {
       const page = mapped
         .slice(input.offset, input.offset + input.limit)
         .map((entry) => entry.row);
-      // F10a — Enriquecimiento solo de la página devuelta (no de
-      // las 10.000 filas del fetch): nombre por id de usuario y
-      // conteo de líneas por exportación. Sin JOIN en SQL: el fake
-      // no tiene joins y `requested_by` es texto mientras `user.id`
-      // es uuid; las búsquedas por id + merge en JS siguen el
-      // patrón de los adaptadores de lectura de F0.
+      // Enriquecer solo la página devuelta: nombre y COUNT SQL íntegro.
       const enriched: ExportListRow[] = [];
       for (const row of page) {
         enriched.push({
           ...row,
           requestedByName: await findUserName(db, row.requestedBy),
-          lineCount: await countLineRows(db, row.id),
+          lineCount: await countLineRows(db, row.id, organizationId),
         });
       }
       return { rows: enriched, total };
     },
 
-    async findMainRows(exportId, organizationId) {
-      const documentIds = await findItemDocumentIds(exportId);
-      const withSort: Array<{
-        row: MainCsvRow;
-        sortTime: number;
-        sortId: string;
-      }> = [];
-      for (const documentId of documentIds) {
-        const doc = await findDocumentRow(documentId, organizationId);
-        if (doc === null) {
-          throw new Error(
-            "export-csv-drizzle: fila de documento inválida en la exportación.",
-          );
-        }
-        const id = asStringOrNull(doc["id"]);
-        const org = asStringOrNull(doc["organizationId"]);
-        const status = asStringOrNull(doc["status"]);
-        if (id === null || org === null || status === null) {
-          throw new Error(
-            "export-csv-drizzle: fila de documento inválida en la exportación.",
-          );
-        }
-        const decisionRows = await db
-          .select({
-            decidedBy: schema.documentDecisions.decidedBy,
-            decidedAt: schema.documentDecisions.decidedAt,
-          })
-          .from(schema.documentDecisions)
-          .where(eq(schema.documentDecisions.documentId, documentId))
-          .limit(1);
-        const decision = decisionRows[0];
-        const decidedBy =
-          decision === undefined
-            ? null
-            : asStringOrNull(decision["decidedBy"]);
-        /**
-         * F10a-FIX — decided_by con nombre: mismo criterio que
-         * requestedByName (findUserName por id contra la tabla
-         * `user` de Better Auth). Sin fila → se mantiene el UUID
-         * (comportamiento previo para usuarios borrados); sin
-         * decisión → null (celda vacía, no inventada).
-         */
-        const decidedByName =
-          decidedBy === null
-            ? null
-            : ((await findUserName(db, decidedBy)) ?? decidedBy);
-        const decidedAtRaw =
-          decision === undefined ? null : decision["decidedAt"];
-        const decidedAt =
-          decidedAtRaw instanceof Date
-            ? decidedAtRaw.toISOString()
-            : typeof decidedAtRaw === "string"
-              ? decidedAtRaw
-              : null;
-        const createdAt = doc["createdAt"];
-        withSort.push({
-          row: {
-            id,
-            supplierName: asStringOrNull(doc["supplierName"]),
-            supplierTaxId: asStringOrNull(doc["supplierTaxId"]),
-            invoiceNumber: asStringOrNull(doc["invoiceNumber"]),
-            issueDate: toIsoDate(
-              doc["issueDate"] instanceof Date
-                ? doc["issueDate"]
-                : typeof doc["issueDate"] === "string"
-                  ? doc["issueDate"]
-                  : null,
-            ),
-            currency: asStringOrNull(doc["currency"]),
-            totalAmount: asStringOrNull(doc["totalAmount"]),
-            approvedAt: decidedAt,
-            decidedBy: decidedByName,
-          },
-          sortTime: toSortTime(
-            createdAt instanceof Date || typeof createdAt === "string"
-              ? createdAt
-              : null,
-          ),
-          sortId: id,
-        });
+    async *findMainRows(exportId, organizationId) {
+      for await (const doc of documents(exportId, organizationId)) {
+        const id = doc["id"] as string;
+        const decisionRows = await db.select({ decidedBy: schema.documentDecisions.decidedBy, decidedAt: schema.documentDecisions.decidedAt })
+          .from(schema.documentDecisions).where(eq(schema.documentDecisions.documentId, id)).limit(1);
+        const decidedBy = asStringOrNull(decisionRows[0]?.["decidedBy"]);
+        const decidedAt = asDateOrNull(decisionRows[0]?.["decidedAt"]);
+        yield {
+          id, supplierName: asStringOrNull(doc["supplierName"]), supplierTaxId: asStringOrNull(doc["supplierTaxId"]),
+          invoiceNumber: asStringOrNull(doc["invoiceNumber"]),
+          issueDate: toIsoDate(asDateOrNull(doc["issueDate"])), currency: asStringOrNull(doc["currency"]),
+          totalAmount: asStringOrNull(doc["totalAmount"]),
+          approvedAt: decidedAt instanceof Date ? decidedAt.toISOString() : decidedAt,
+          decidedBy: decidedBy === null ? null : (await findUserName(db, decidedBy)) ?? decidedBy,
+        };
       }
-      withSort.sort(
-        (a, b) =>
-          a.sortTime - b.sortTime ||
-          (a.sortId < b.sortId ? -1 : a.sortId > b.sortId ? 1 : 0),
-      );
-      return withSort.map((entry) => entry.row);
     },
 
-    async findLineRows(exportId, organizationId) {
-      const documentIds = await findItemDocumentIds(exportId);
-      const withSort: Array<{
-        row: LinesCsvRow;
-        sortTime: number;
-        sortDocId: string;
-        lineNumber: number;
-      }> = [];
-      for (const documentId of documentIds) {
-        const doc = await findDocumentRow(documentId, organizationId);
-        if (doc === null) {
-          throw new Error(
-            "export-csv-drizzle: fila de documento inválida en la exportación.",
-          );
-        }
-        const id = asStringOrNull(doc["id"]);
-        const org = asStringOrNull(doc["organizationId"]);
-        const status = asStringOrNull(doc["status"]);
-        if (id === null || org === null || status === null) {
-          throw new Error(
-            "export-csv-drizzle: fila de documento inválida en la exportación.",
-          );
-        }
-        const createdAt = doc["createdAt"];
-        const sortTime = toSortTime(
-          createdAt instanceof Date || typeof createdAt === "string"
-            ? createdAt
-            : null,
-        );
-        const lines = await db
-          .select({
-            lineNumber: schema.extractionLines.lineNumber,
-            description: schema.extractionLines.description,
-            quantity: schema.extractionLines.quantity,
-            unitPrice: schema.extractionLines.unitPrice,
+    async *findLineRows(exportId, organizationId) {
+      for await (const doc of documents(exportId, organizationId)) {
+        const documentId = doc["id"] as string;
+        let last = 0;
+        for (;;) {
+          const page = await db.select({
+            lineNumber: schema.extractionLines.lineNumber, description: schema.extractionLines.description,
+            quantity: schema.extractionLines.quantity, unitPrice: schema.extractionLines.unitPrice,
             lineTotal: schema.extractionLines.lineTotal,
-          })
-          .from(schema.extractionLines)
-          .where(eq(schema.extractionLines.documentId, documentId))
-          .limit(1000);
-        for (const line of lines) {
-          const lineNumber = asNumberOrNull(line["lineNumber"]);
-          if (lineNumber === null) {
-            throw new Error(
-              "export-csv-drizzle: línea de detalle sin número válido.",
-            );
+          }).from(schema.extractionLines)
+            .where(and(eq(schema.extractionLines.documentId, documentId), gt(schema.extractionLines.lineNumber, last)))
+            .orderBy(asc(schema.extractionLines.lineNumber)).limit(EXPORT_READ_PAGE_SIZE);
+          for (const line of page) {
+            const lineNumber = asNumberOrNull(line["lineNumber"]);
+            if (lineNumber === null || !Number.isInteger(lineNumber) || lineNumber <= last) {
+              throw new Error("export-csv-drizzle: línea de detalle sin número válido.");
+            }
+            yield { documentId, lineNumber, description: asStringOrNull(line["description"]),
+              quantity: asStringOrNull(line["quantity"]), unitPrice: asStringOrNull(line["unitPrice"]),
+              lineTotal: asStringOrNull(line["lineTotal"]) };
+            last = lineNumber;
           }
-          withSort.push({
-            row: {
-              documentId: id,
-              lineNumber,
-              description: asStringOrNull(line["description"]),
-              quantity: asStringOrNull(line["quantity"]),
-              unitPrice: asStringOrNull(line["unitPrice"]),
-              lineTotal: asStringOrNull(line["lineTotal"]),
-            },
-            sortTime,
-            sortDocId: id,
-            lineNumber,
-          });
+          if (page.length < EXPORT_READ_PAGE_SIZE) break;
         }
       }
-      withSort.sort(
-        (a, b) =>
-          a.sortTime - b.sortTime ||
-          (a.sortDocId < b.sortDocId ? -1 : a.sortDocId > b.sortDocId ? 1 : 0) ||
-          a.lineNumber - b.lineNumber,
-      );
-      return withSort.map((entry) => entry.row);
     },
   };
 }

@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildLinesCsv,
+  buildCsvIncrementally,
   buildMainCsv,
   CsvSizeExceededError,
   DEFAULT_CSV_MAX_BYTES,
@@ -110,6 +111,25 @@ describe("buildMainCsv", () => {
 });
 
 describe("buildLinesCsv", () => {
+  it("sin líneas conserva BOM, encabezado y CRLF", () => {
+    expect(buildLinesCsv([], OPTIONS)).toBe("\uFEFFdocument_id;line_number;description;quantity;unit_price;line_total\r\n");
+  });
+
+  it.each([true, false])("F11a: presupuesto UTF-8 exacto con BOM=%s y escape completo", async bom => {
+    const options = { ...OPTIONS, bom, delimiter: "|" };
+    const row = linesRow({ description: '=á😀|"x"\r\nfin' });
+    const expected = (bom ? "\uFEFF" : "") +
+      'document_id|line_number|description|quantity|unit_price|line_total\r\n' +
+      'doc-1|1|"\'=á😀|""x""\r\nfin"|1.0000|100000.0000|100000.0000\r\n';
+    const exact = Buffer.byteLength(expected, "utf8");
+    expect(buildLinesCsv([row], { ...options, maxBytes: exact })).toBe(expected);
+    expect(() => buildLinesCsv([row], { ...options, maxBytes: exact - 1 })).toThrow(CsvSizeExceededError);
+    const result = await buildCsvIncrementally([row], "lines", { ...options, maxBytes: exact });
+    expect(result.buffer.equals(Buffer.from(expected))).toBe(true);
+    expect(result.rowCount).toBe(1);
+    await expect(buildCsvIncrementally([row], "lines", { ...options, maxBytes: exact - 1 })).rejects.toThrow(CsvSizeExceededError);
+  });
+
   it("emite el header exacto y filas de líneas", () => {
     const csv = buildLinesCsv(
       [linesRow(), linesRow({ lineNumber: 2, lineTotal: "21000.0000" })],
@@ -149,6 +169,16 @@ describe("entrecomillado RFC 4180", () => {
 });
 
 describe("BOM y límite", () => {
+  it("F11a: deja de leer filas en la primera superación del presupuesto", () => {
+    const first = linesRow({ description: 'á😀;"texto"\r\nfin' });
+    const exact = Buffer.byteLength(buildLinesCsv([first], OPTIONS), "utf8");
+    const unread = linesRow();
+    Object.defineProperty(unread, "description", { get() { throw new Error("fila posterior consumida"); } });
+    expect(buildLinesCsv([first], { ...OPTIONS, maxBytes: exact })).toBe(buildLinesCsv([first], OPTIONS));
+    expect(() => buildLinesCsv([first, linesRow(), unread], { ...OPTIONS, maxBytes: exact }))
+      .toThrow(CsvSizeExceededError);
+  });
+
   it("con bom: true antepone U+FEFF", () => {
     const csv = buildMainCsv([mainRow()], OPTIONS);
     expect(csv.charCodeAt(0)).toBe(0xfeff);

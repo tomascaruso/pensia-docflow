@@ -345,6 +345,31 @@ sin eliminar candidatos. El total procede exclusivamente del backend.
 
 ## S7. Exportaciones
 
+### Integridad de CSV — F11a
+
+La descarga contiene todas las filas correspondientes o devuelve un error;
+nunca se presenta como válido un CSV recortado. Documentos se recorren por
+`created_at ASC, id ASC` y líneas por `line_number ASC`, mediante páginas de
+250 y cursores keyset. La comparación del timestamp del cursor se mantiene
+en PostgreSQL para conservar sus microsegundos. Validación, ítems y páginas
+de una descarga se leen en una misma transacción `REPEATABLE READ`, de solo
+lectura. Se mantienen los controles de organización, permiso y `approved`.
+`lineCount` es un `COUNT(*)` SQL completo, sin traer las líneas para contarlas.
+
+Se conserva el máximo de 100 documentos para nuevas exportaciones. Cada CSV
+tiene su propio límite predeterminado de 5 MiB, con la configuración existente
+`DOCFLOW_CSV_MAX_BYTES`. El presupuesto usa los bytes UTF-8 serializados:
+BOM, encabezado, delimitador, comillas duplicadas, escape de fórmulas y CRLF.
+Se comprueba antes de construir una fila serializada que excedería el límite;
+al excederlo se detiene el iterador sin acumular páginas posteriores y se
+responde 413 JSON, sin CSV parcial ni evento `export.downloaded`.
+Un archivo sin líneas conserva BOM y encabezado. El límite del archivo no
+garantiza un consumo exacto de RAM: también existen páginas, campos y buffers.
+
+F11a no cambia estados, `completed_at`, preparación ni reintentos. La deuda
+del ciclo de estados queda pendiente para F11b; descargar no certifica que
+el navegador haya terminado de recibir o guardar el archivo.
+
 **Propósito:** exportar solo aprobados, y dejar registro de cada
 exportación.
 

@@ -1,11 +1,6 @@
 /**
- * DocFlow B6 — Tests del adaptador de lectura CSV.
- *
- * `findExportDetails`, `findMainRows` y `findLineRows` usan
- * `createFakeDb` (evalúa eq/and, select con where+limit).
- * `findExportsByOrg` usa orderBy + offset + COUNT, que el fake no
- * soporta: se prueba con un fake a mano (mapeo + total) y la
- * semántica SQL real queda cubierta por la integración (PG real).
+ * Lectura CSV F11a: fake acotado con predicados, joins, COUNT y orden.
+ * La paginación y el conteo también se comprueban contra PostgreSQL en B6.
  */
 
 import { describe, expect, it } from "vitest";
@@ -19,6 +14,10 @@ import {
   createFakeDb,
   type FakeRow,
 } from "../test-utils/fake-tx.js";
+
+async function collect<T>(rows: AsyncIterable<T>): Promise<T[]> {
+  const result: T[] = []; for await (const row of rows) result.push(row); return result;
+}
 
 const ORG = "10000000-0000-4000-8000-000000000001";
 const OTHER_ORG = "10000000-0000-4000-8000-000000000002";
@@ -141,7 +140,7 @@ describe("findExportDetails", () => {
 describe("findMainRows", () => {
   it("ordena por createdAt ASC y mapea decisión + nulos a vacío", async () => {
     const client = asClient(createFakeDb(baseTables()));
-    const rows = await client.findMainRows(EXPORT, ORG);
+    const rows = await collect(client.findMainRows(EXPORT, ORG));
     expect(rows).toHaveLength(2);
     // DOC_B es más antiguo (08:00) que DOC_A (09:00).
     expect(rows[0]?.id).toBe(DOC_B);
@@ -171,7 +170,7 @@ describe("findMainRows", () => {
       decidedAt: new Date("2026-02-11T11:00:00.000Z"),
     });
     const client = asClient(createFakeDb(tables));
-    const rows = await client.findMainRows(EXPORT, ORG);
+    const rows = await collect(client.findMainRows(EXPORT, ORG));
     expect(rows).toHaveLength(2);
     // DOC_B es más antiguo (08:00): su decisor no tiene fila → UUID.
     expect(rows[0]?.decidedBy).toBe("usuario-sin-fila");
@@ -193,16 +192,72 @@ describe("findMainRows", () => {
       documentId: "doc-otra-org",
     });
     const client = asClient(createFakeDb(tables));
-    await expect(client.findMainRows(EXPORT, ORG)).rejects.toThrow(
+    await expect(collect(client.findMainRows(EXPORT, ORG))).rejects.toThrow(
       "fila de documento inválida",
     );
   });
 });
 
 describe("findLineRows", () => {
+  it("F11a: conteo no incorpora líneas de otra organización en un ítem corrupto", async () => {
+    const tables = baseTables();
+    tables.get(schema.documents)?.push({ id: "foreign", organizationId: OTHER_ORG, status: "approved", createdAt: new Date("2026-01-01T00:00:00Z") });
+    tables.get(schema.exportItems)?.push({ exportId: EXPORT, documentId: "foreign" });
+    tables.get(schema.extractionLines)?.push({ documentId: "foreign", lineNumber: 1 });
+    const reader = asClient(createFakeDb(tables));
+    const list = await reader.findExportsByOrg(ORG, { limit: 25, offset: 0 });
+    expect(list.rows[0].lineCount).toBe(2);
+    await expect(collect(reader.findLineRows(EXPORT, ORG))).rejects.toThrow("fila de documento inválida");
+  });
+
+  it("F11a: lineCount completo independientemente de descargar las filas", async () => {
+    const tables = baseTables();
+    tables.set(schema.extractionLines, Array.from({ length: 1001 }, (_, i) => ({
+      documentId: DOC_A, lineNumber: i + 1,
+    })));
+    const result = await asClient(createFakeDb(tables)).findExportsByOrg(ORG, { limit: 25, offset: 0 });
+    expect(result.rows[0].lineCount).toBe(1001);
+  });
+
+  it("F11a: páginas de documentos, empates de fecha y más de 500 ítems sin recorte", async () => {
+    const tables = baseTables();
+    const docs = Array.from({ length: 501 }, (_, i) => ({
+      id: `20000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+      organizationId: ORG, status: "approved",
+      createdAt: new Date(i % 2 === 0 ? "2026-02-01T00:00:00Z" : "2026-02-02T00:00:00Z"),
+    })).reverse();
+    tables.set(schema.documents, docs);
+    tables.set(schema.exportItems, docs.map(d => ({ exportId: EXPORT, documentId: d.id })));
+    tables.set(schema.extractionLines, docs.flatMap(d => [2, 1].map(n => ({ documentId: d.id, lineNumber: n }))));
+    const client = asClient(createFakeDb(tables));
+    const expected = [...docs].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)).map(d => d.id);
+    const main = await collect(client.findMainRows(EXPORT, ORG));
+    expect(main.map(r => r.id)).toEqual(expected);
+    const lines = await collect(client.findLineRows(EXPORT, ORG));
+    expect(lines.map(r => `${r.documentId}:${r.lineNumber}`)).toEqual(expected.flatMap(id => [`${id}:1`, `${id}:2`]));
+    const list = await client.findExportsByOrg(ORG, { limit: 25, offset: 0 });
+    expect(list.rows[0].lineCount).toBe(1002);
+  });
+
+  it.each([999, 1000, 1001, 2251])("F11a: %i líneas completas y conteo del listado", async (count) => {
+    const tables = baseTables();
+    tables.set(schema.extractionLines, Array.from({ length: count }, (_, i) => ({
+      id: `line-${i}`, documentId: DOC_A, lineNumber: count - i,
+      description: `Línea ${count - i}`, quantity: "1", unitPrice: "1", lineTotal: "1",
+    })));
+    const client = asClient(createFakeDb(tables));
+    const rows = await collect(client.findLineRows(EXPORT, ORG));
+    expect(rows).toHaveLength(count);
+    expect(rows.map(r => r.lineNumber)).toEqual(Array.from({ length: count }, (_, i) => i + 1));
+    expect(rows.at(-1)?.description).toBe(`Línea ${count}`);
+    expect(new Set(rows.map(r => `${r.documentId}:${r.lineNumber}`)).size).toBe(count);
+    const list = await client.findExportsByOrg(ORG, { limit: 25, offset: 0 });
+    expect(list.rows[0].lineCount).toBe(count);
+  });
+
   it("ordena por documento y lineNumber; descripción nula intacta", async () => {
     const client = asClient(createFakeDb(baseTables()));
-    const rows = await client.findLineRows(EXPORT, ORG);
+    const rows = await collect(client.findLineRows(EXPORT, ORG));
     expect(rows).toHaveLength(2);
     expect(rows[0]?.lineNumber).toBe(1);
     expect(rows[0]?.description).toBeNull();
@@ -220,6 +275,7 @@ describe("findExportsByOrg (createFakeDb)", () => {
       [schema.exports, []],
       [schema.exportItems, []],
       [schema.extractionLines, []],
+      [schema.documents, []],
       [authTables.user, []],
     ]);
     tables.get(schema.exports)?.push(

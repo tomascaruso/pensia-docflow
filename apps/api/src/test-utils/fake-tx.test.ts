@@ -5,6 +5,28 @@ import { createFakeDb } from "./fake-tx.js";
 import * as schema from "../db/schema.js";
 
 describe("fake SQL paginado", () => {
+  it.each(["b", "missing"])("JOIN con cursor constante %s conserva WHERE y semántica LEFT JOIN", async id => {
+    const bookmark = alias(schema.documents, "cursor");
+    const db = createFakeDb(new Map<unknown, Array<Record<string, unknown>>>([
+      [schema.exportItems, [{ exportId: "own", documentId: "a" }, { exportId: "other", documentId: "b" }]],
+      [schema.documents, [{ id: "a" }, { id: "b" }]],
+    ]));
+    const rows = await db.select({ documentId: schema.exportItems.documentId, cursor: bookmark.id })
+      .from(schema.exportItems).leftJoin(bookmark, eq(bookmark.id, id))
+      .where(eq(schema.exportItems.exportId, "own"));
+    expect(rows).toEqual([{ documentId: "a", cursor: id === "b" ? "b" : undefined }]);
+  });
+
+  it("JOIN desconocido falla incluso sin filas", async () => {
+    const bookmark = alias(schema.documents, "cursor");
+    const db = createFakeDb(new Map<unknown, Array<Record<string, unknown>>>([
+      [schema.exportItems, []], [schema.documents, []],
+    ]));
+    await expect(db.select({ id: bookmark.id }).from(schema.exportItems)
+      .leftJoin(bookmark, sql`unsupported(${bookmark.id})`)
+      .where(eq(schema.exportItems.exportId, "own"))).rejects.toThrow(/fake-tx:/);
+  });
+
   it("aplica AND, JOIN aprobado, rango, literal, conteo y offset sin perder aislamiento", async () => {
     const db = createFakeDb(new Map<unknown, Array<Record<string, unknown>>>([
       [schema.documents, [
