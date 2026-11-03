@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
@@ -357,6 +358,32 @@ test.describe("S7 Exportaciones", () => {
     expect(download.suggestedFilename()).toContain("docflow-exportacion");
     expect(download.suggestedFilename()).toMatch(/\.csv$/);
   });
+  test("F11a: 1001 líneas en la tabla y descarga completa desde el navegador", async ({ page, request }, testInfo) => {
+    const docId = await seedApprovedDoc(request, orgId, cookie, "F11a líneas", "f11a-lines.pdf");
+    psql(`INSERT INTO extraction_lines (document_id,line_number,description,quantity,unit_price,line_total)
+      SELECT '${docId}'::uuid,n,'Línea '||n,1,1,1 FROM generate_series(1,1001) AS n ORDER BY n DESC;`);
+    const exportId = seedExport(orgId, docId);
+    await login(page);
+    await page.goto(`/o/${orgId}/exportaciones`);
+    const link = page.locator(`a[href$="/exports/${exportId}/csv?file=lines"]`);
+    const row = page.getByRole("row").filter({ has: link });
+    await expect(row.getByRole("cell", { name: "1001", exact: true })).toBeVisible();
+    const pending = page.waitForEvent("download");
+    await link.click();
+    const download = await pending;
+    expect(await download.failure()).toBeNull();
+    const file = testInfo.outputPath("f11a-1001-lines.csv");
+    await download.saveAs(file);
+    const contents = await readFile(file, "utf8");
+    const records = contents.replace(/^\uFEFF/u, "").trimEnd().split("\r\n");
+    expect(records.shift()).toBe("document_id;line_number;description;quantity;unit_price;line_total");
+    expect(records.map(record => record.split(";").slice(0, 3))).toEqual(
+      Array.from({ length: 1001 }, (_, i) => [docId, String(i + 1), `Línea ${i + 1}`]),
+    );
+    expect(new Set(records).size).toBe(1001);
+    await testInfo.attach("CSV íntegro de 1001 líneas", { path: file, contentType: "text/csv" });
+  });
+
   async function seedFiltered(tag: string) {
     const values = Array.from({ length: 31 }, (_, i) => `('${orgId}', 'f10b-${tag}-${i}.pdf', '${createHash("sha256").update(`f10b-${tag}-${i}`).digest("hex")}', 'application/pdf', 100, 'approved', '${i === 0 ? "Dirección Sur " : ""}F10b-${tag}', TIMESTAMPTZ '2026-02-01 00:00:00Z' + INTERVAL '${i} minutes')`).join(",");
     psql(`INSERT INTO documents (organization_id,file_name,file_hash,mime_type,size_bytes,status,supplier_name,created_at) VALUES ${values};

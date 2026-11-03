@@ -30,12 +30,12 @@ import type {
 } from "../db/export-service.js";
 import type { ExportDetails } from "../db/export-csv-drizzle.js";
 import {
-  buildLinesCsv,
-  buildMainCsv,
+  buildCsvIncrementally,
   CsvSizeExceededError,
   csvMaxBytes,
   type LinesCsvRow,
   type MainCsvRow,
+  type CsvRows,
 } from "./csv-generator.js";
 
 export class ExportGenerationFailedError extends Error {
@@ -102,11 +102,11 @@ export interface ExportCsvReader {
     exportId: string,
     organizationId: string,
   ): Promise<ExportDetails | null>;
-  findMainRows(exportId: string, organizationId: string): Promise<MainCsvRow[]>;
+  findMainRows(exportId: string, organizationId: string): CsvRows<MainCsvRow>;
   findLineRows(
     exportId: string,
     organizationId: string,
-  ): Promise<LinesCsvRow[]>;
+  ): CsvRows<LinesCsvRow>;
 }
 
 export interface ExportOrchestratorDeps {
@@ -202,23 +202,21 @@ export async function generateExportCsv(
   const bom = deps.options?.bom ?? true;
   const maxBytes = deps.options?.maxBytes ?? csvMaxBytes();
   const options = { delimiter, bom, maxBytes };
-  let text: string;
+  let buffer: Buffer;
   let rowCount: number;
   try {
     if (input.file === "main") {
-      const rows = await deps.csv.findMainRows(
+      const rows = deps.csv.findMainRows(
         input.exportId,
         input.organizationId,
       );
-      text = buildMainCsv(rows, options);
-      rowCount = rows.length;
+      ({ buffer, rowCount } = await buildCsvIncrementally(rows, "main", options));
     } else {
-      const rows = await deps.csv.findLineRows(
+      const rows = deps.csv.findLineRows(
         input.exportId,
         input.organizationId,
       );
-      text = buildLinesCsv(rows, options);
-      rowCount = rows.length;
+      ({ buffer, rowCount } = await buildCsvIncrementally(rows, "lines", options));
     }
   } catch (error) {
     if (error instanceof CsvSizeExceededError) {
@@ -261,7 +259,7 @@ export async function generateExportCsv(
       ? `docflow-exportacion-${datePart}-${shortId}.csv`
       : `docflow-exportacion-${datePart}-${shortId}-lineas.csv`;
   return {
-    buffer: Buffer.from(text, "utf8"),
+    buffer,
     fileName,
     mimeType: "text/csv; charset=utf-8",
     rowCount,

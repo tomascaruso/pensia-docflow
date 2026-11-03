@@ -732,6 +732,7 @@ describe("GET /organizations/:orgId/exports (F10a)", () => {
           completedAt: null,
         },
       );
+      seedDoc(t); // FK real: las líneas pertenecen a un documento de esta organización.
       t.get(schema.exportItems)?.push({
         id: "item-01",
         exportId: "export-con-nombre",

@@ -49,6 +49,7 @@ import {
   createDrizzleAuditEventStore,
   createDrizzleAuditOrganizationResolver,
   writeAuditEvent,
+  type AuditEventInput,
 } from "../db/audit-writer.js";
 import { createExportCsvDrizzle } from "../db/export-csv-drizzle.js";
 import { createExportServiceDeps } from "../db/export-drizzle.js";
@@ -274,26 +275,33 @@ export function registerExportRoutes(
       const file = parseExportFile(
         (request.query as { file?: unknown } | undefined)?.file,
       );
-      const serviceDeps = createExportServiceDeps(deps.db);
-      const result = await generateExportCsv(
-        {
-          generation: {
-            ...serviceDeps,
-            verifyExportForGeneration: (id, org) =>
-              verifyExportForGeneration(serviceDeps, id, org),
-            verifyExportCoherence: (id) =>
-              verifyExportCoherence(serviceDeps, id),
-          },
-          csv: createExportCsvDrizzle(deps.db),
-          audit: dbAudit,
-        },
-        {
-          organizationId: orgId,
-          exportId,
-          file,
-          actorUserId: user.id,
-        },
-      );
+      // Una instantánea para validación, ítems y todas las páginas. La
+      // auditoría se emite después del commit de lectura, antes de servir bytes.
+      const audits: AuditEventInput[] = [];
+      let result: Awaited<ReturnType<typeof generateExportCsv>>;
+      try {
+        result = await deps.db.transaction(async tx => {
+          const serviceDeps = createExportServiceDeps(tx);
+          return generateExportCsv({
+            generation: {
+              ...serviceDeps,
+              verifyExportForGeneration: (id, org) => verifyExportForGeneration(serviceDeps, id, org),
+              verifyExportCoherence: id => verifyExportCoherence(serviceDeps, id),
+            },
+            csv: createExportCsvDrizzle(tx),
+            audit: async event => { audits.push(event); },
+          }, { organizationId: orgId, exportId, file, actorUserId: user.id });
+        }, { isolationLevel: "repeatable read", accessMode: "read only" });
+      } catch (error) {
+        for (const event of audits) {
+          if (event.action === "export.generation_failed") {
+            try { await dbAudit(event); } catch { /* Preservar el 409/413 original. */ }
+          }
+        }
+        throw error;
+      }
+      // Si falla la auditoría de éxito, propaga 500 sin enviar CSV.
+      for (const event of audits) await dbAudit(event);
       return reply
         .header("Content-Type", result.mimeType)
         .header(

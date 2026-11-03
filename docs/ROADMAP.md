@@ -135,3 +135,19 @@ conteo y paginación SQL sin recortes previos. Compatibilidad de parámetros
 legados, PD-14 y aislamiento de ambos documentos. Frontend sin filtros locales
 ni búsqueda auxiliar; conserva caché, URL y degradación de detalles a null.
 No modifica detección, resolución, permisos, cuarentena ni aprobación.
+
+## F11a — Integridad y presupuesto incremental de CSV
+
+Se elimina el recorte de líneas a 1.000 por documento y el tope de 500 ítems
+del camino de generación. Lectura keyset en páginas de 250 con orden total,
+comparación temporal en PostgreSQL y snapshot de solo lectura por descarga.
+El conteo de líneas es una agregación SQL completa. El serializador calcula
+bytes UTF-8 y rechaza con 413 antes de construir una fila excedida, sin
+consumir el resto de las páginas ni auditar una descarga exitosa.
+Se conservan formato, escape, nombres, permisos y límite de 100 documentos
+nuevos / 5 MiB por CSV (configurable como antes). No hay cambios de esquema.
+
+Pendiente **F11b**: contrato y transiciones de estados de exportación,
+`completed_at` y acciones reales de preparación/reintento. F11a no los cambia
+ni incorpora endpoints o eventos de ciclo de vida. El tope histórico del
+listado de exportaciones es independiente de la generación y no se modifica.

@@ -507,6 +507,92 @@ describe.skipIf(!process.env.DOCFLOW_B6_TEST)(
       expect(beyond.json().documents[0].supplierName).toBe("Final único");
     });
 
+    it.each([0, 999, 1000, 1001])("F11a: %i líneas reales, COUNT completo y descarga íntegra", async count => {
+      const orgId = await createOrg("F11a líneas");
+      const [doc] = await rawDb.insert(schema.documents).values({
+        organizationId: orgId, fileName: "f11a.pdf", fileHash: "e".repeat(64),
+        mimeType: "application/pdf", sizeBytes: 100, status: "approved", supplierName: "F11a sintético",
+      }).returning({ id: schema.documents.id });
+      await rawDb.execute(sql`INSERT INTO extraction_lines (document_id,line_number,description,quantity,unit_price,line_total)
+        SELECT ${doc.id}::uuid,n,'Línea '||n,1,1,1 FROM generate_series(1,${count}::int) AS n ORDER BY n DESC`);
+      const created = await postExport(adminCookie, orgId, { documentIds: [doc.id] });
+      expect(created.statusCode).toBe(201);
+      const id = (created.json() as { id: string }).id;
+      const list = await getList(adminCookie, orgId);
+      expect(list.statusCode).toBe(200);
+      expect((list.json() as { exports: Array<{ lineCount: number }> }).exports[0].lineCount).toBe(count);
+      const csv = await getCsv(adminCookie, orgId, id, "?file=lines");
+      expect(csv.statusCode).toBe(200);
+      const records = csv.body.replace(/^\uFEFF/u, "").trimEnd().split("\r\n");
+      expect(records.shift()).toBe("document_id;line_number;description;quantity;unit_price;line_total");
+      expect(records).toHaveLength(count);
+      expect(records.map(r => r.split(";").slice(0, 3))).toEqual(Array.from({ length: count }, (_, i) => [doc.id, String(i + 1), `Línea ${i + 1}`]));
+      expect(new Set(records.map(r => r.split(";").slice(0, 2).join(":"))).size).toBe(count);
+      const [actual] = await rawDb.select({ count: sql<string>`count(*)` }).from(schema.extractionLines).where(eq(schema.extractionLines.documentId, doc.id));
+      expect(Number(actual.count)).toBe(records.length);
+      const downloaded = (await getAuditsByOrg(orgId)).filter(a => a.action === "export.downloaded");
+      expect(downloaded).toHaveLength(1);
+      expect(downloaded[0].detailsJson).toMatchObject({ file: "lines", row_count: count });
+    });
+
+    it("F11a: histórico de 501 documentos, empate de fechas y varias páginas sin topes ocultos", async () => {
+      const orgId = await createOrg("F11a histórico sintético");
+      const owner = await userIdByEmail(ADMIN_EMAIL);
+      const docs = await rawDb.insert(schema.documents).values(Array.from({ length: 501 }, (_, i) => ({
+        organizationId: orgId, fileName: `hist-${i}.pdf`, fileHash: "e".repeat(64),
+        mimeType: "application/pdf", sizeBytes: 100, status: "approved",
+        createdAt: new Date("2026-02-01T00:00:00Z"),
+      }))).returning({ id: schema.documents.id });
+      // Precisión mayor que Date de JS: el cursor debe comparar dentro de SQL.
+      await rawDb.execute(sql`UPDATE documents SET created_at=TIMESTAMPTZ '2026-02-01 00:00:00.123456Z' WHERE organization_id=${orgId}::uuid`);
+      const [exp] = await rawDb.insert(schema.exports).values({ organizationId: orgId, requestedBy: owner, documentCount: docs.length }).returning({ id: schema.exports.id });
+      await rawDb.insert(schema.exportItems).values(docs.map(d => ({ exportId: exp.id, documentId: d.id })));
+      await rawDb.insert(schema.extractionLines).values(docs.flatMap(d => [2, 1].map(n => ({ documentId: d.id, lineNumber: n, description: `Línea ${n}` }))));
+      const main = await getCsv(adminCookie, orgId, exp.id);
+      const lines = await getCsv(adminCookie, orgId, exp.id, "?file=lines");
+      expect(main.statusCode).toBe(200); expect(lines.statusCode).toBe(200);
+      const expected = docs.map(d => d.id).sort();
+      expect(main.body.replace(/^\uFEFF/u, "").trimEnd().split("\r\n").slice(1).map(r => r.split(";")[0])).toEqual(expected);
+      expect(lines.body.replace(/^\uFEFF/u, "").trimEnd().split("\r\n").slice(1).map(r => r.split(";").slice(0, 2).join(":")))
+        .toEqual(expected.flatMap(id => [`${id}:1`, `${id}:2`]));
+      const list = (await getList(adminCookie, orgId)).json() as { exports: Array<{ lineCount: number }> };
+      expect(list.exports[0].lineCount).toBe(1002);
+    });
+
+    it("F11a: bytes exactos UTF-8 y 413 antes de servir o auditar éxito", async () => {
+      const orgId = await createOrg("F11a presupuesto");
+      const [doc] = await rawDb.insert(schema.documents).values({
+        organizationId: orgId, fileName: "bytes.pdf", fileHash: "d".repeat(64),
+        mimeType: "application/pdf", sizeBytes: 100, status: "approved",
+      }).returning({ id: schema.documents.id });
+      await rawDb.insert(schema.extractionLines).values({ documentId: doc.id, lineNumber: 1, description: '=á😀;"x"\r\nfin' });
+      const created = await postExport(adminCookie, orgId, { documentIds: [doc.id] });
+      const id = (created.json() as { id: string }).id;
+      const expected = '\uFEFFdocument_id;line_number;description;quantity;unit_price;line_total\r\n' +
+        `${doc.id};1;"'=á😀;""x""\r\nfin";;;\r\n`;
+      const exact = Buffer.byteLength(expected, "utf8");
+      const previous = process.env.DOCFLOW_CSV_MAX_BYTES;
+      try {
+        process.env.DOCFLOW_CSV_MAX_BYTES = String(exact);
+        const ok = await getCsv(adminCookie, orgId, id, "?file=lines");
+        expect(ok.statusCode).toBe(200); expect(ok.body).toBe(expected);
+        process.env.DOCFLOW_CSV_MAX_BYTES = String(exact - 1);
+        const failed = await getCsv(adminCookie, orgId, id, "?file=lines");
+        expect(failed.statusCode).toBe(413);
+        expect(failed.headers["content-type"]).toContain("application/json");
+        expect(failed.headers["content-disposition"]).toBeUndefined();
+        expect(failed.json()).toMatchObject({ error: "export_too_large" });
+        const audits = await getAuditsByOrg(orgId);
+        expect(audits.filter(e => e.action === "export.downloaded")).toHaveLength(1);
+        expect(audits.filter(e => e.action === "export.generation_failed")).toHaveLength(1);
+        expect((await getExportRow(id))?.status).toBe("pending");
+        expect((await getExportRow(id))?.completedAt).toBeNull();
+      } finally {
+        if (previous === undefined) delete process.env.DOCFLOW_CSV_MAX_BYTES;
+        else process.env.DOCFLOW_CSV_MAX_BYTES = previous;
+      }
+    });
+
     it("flujo completo: POST → main → lines + auditorías", async () => {
       const orgId = await createOrg("Org B6 flujo");
       await addReviewer(orgId);

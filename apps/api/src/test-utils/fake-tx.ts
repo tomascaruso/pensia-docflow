@@ -463,6 +463,7 @@ function fakeSelect(fields: Record<string, unknown>, table: unknown, rowsOf: (ta
     const predicate = condition === undefined ? () => true : compilePredicate(condition, tables);
     const compiledJoins = joins.map((join, index) => ({
       table: join.table,
+      on: join.on,
       predicate: compilePredicate(join.on, [table, ...joins.slice(0, index + 1).map(j => j.table)]),
     }));
     const entries = Object.entries(fields);
@@ -483,7 +484,15 @@ function fakeSelect(fields: Record<string, unknown>, table: unknown, rowsOf: (ta
     let contexts: Context[] = rowsOf(table).map(row => ({ [base]: row }));
     for (const join of compiledJoins) {
       const name = tableName(join.table);
-      const joinedRows = rowsOf(join.table);
+      let joinedRows = rowsOf(join.table);
+      // Solo optimiza la igualdad exacta alias.col = parámetro. Ya pasó
+      // la validación sintáctica y no depende de la fila izquierda; el
+      // cursor constante no necesita reevaluar toda la tabla por cada fila.
+      const query = dialect.sqlToQuery(join.on as SQL);
+      const constant = query.sql.match(/^"([^"\n]+)"\."([^"\n]+)" = \$1$/);
+      if (constant?.[1] === name && query.params.length === 1) {
+        joinedRows = joinedRows.filter(row => join.predicate({ [name]: row }));
+      }
       contexts = contexts.flatMap(context => {
         const found = joinedRows.map(row => ({ ...context, [name]: row })).filter(join.predicate);
         return found.length ? found : [{ ...context, [name]: {} }];

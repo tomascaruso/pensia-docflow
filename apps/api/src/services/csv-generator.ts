@@ -152,61 +152,96 @@ function quoteCell(cell: string, delimiter: string): string {
   return cell;
 }
 
-function buildCsv(
-  header: string[],
-  rows: string[][],
-  options: CsvOptions,
-): string {
-  const lines = [header, ...rows].map((row) =>
-    row.map((cell) => quoteCell(cell, options.delimiter)).join(options.delimiter),
-  );
-  const body = `${lines.join("\r\n")}\r\n`;
-  const text = options.bom ? `\uFEFF${body}` : body;
-  const sizeBytes = Buffer.byteLength(text, "utf8");
-  if (sizeBytes > options.maxBytes) {
-    throw new CsvSizeExceededError(sizeBytes, options.maxBytes);
+/** Retiene solo salida admitida. sizeBytes es el prefijo que primero excede
+ * el presupuesto, no una estimación del resto aún no leído. El límite de
+ * archivo no es una garantía del consumo de RAM (filas, página y strings).
+ */
+class CsvWriter {
+  private readonly chunks: string[] = [];
+  private bytes = 0;
+  constructor(private readonly options: CsvOptions, header: string[]) {
+    if (options.bom) this.append("\uFEFF");
+    this.row(header);
   }
-  return text;
+  private append(text: string): void {
+    const next = this.bytes + Buffer.byteLength(text, "utf8");
+    if (next > this.options.maxBytes) {
+      throw new CsvSizeExceededError(next, this.options.maxBytes);
+    }
+    this.chunks.push(text);
+    this.bytes = next;
+  }
+  row(cells: string[]): void {
+    // Presupuestar antes de construir siquiera una fila entrecomillada
+    // excedida (un solo campo puede superar el límite completo).
+    let size = 2 + Math.max(0, cells.length - 1) * Buffer.byteLength(this.options.delimiter, "utf8");
+    for (const cell of cells) {
+      size += Buffer.byteLength(cell, "utf8");
+      if (cell.includes(this.options.delimiter) || cell.includes('"') || cell.includes("\r") || cell.includes("\n")) {
+        size += 2;
+        for (let i = 0; i < cell.length; i++) if (cell[i] === '"') size++;
+      }
+    }
+    if (this.bytes + size > this.options.maxBytes) {
+      throw new CsvSizeExceededError(this.bytes + size, this.options.maxBytes);
+    }
+    this.append(cells.map(cell => quoteCell(cell, this.options.delimiter)).join(this.options.delimiter) + "\r\n");
+  }
+  text(): string { return this.chunks.join(""); }
+}
+
+function mainCells(row: MainCsvRow): string[] {
+  return [
+    formatCell(row.id, "text"), formatCell(row.supplierName, "text"),
+    formatCell(row.supplierTaxId, "text"), formatCell(row.invoiceNumber, "text"),
+    formatCell(row.issueDate, "text"), formatCell(row.currency, "text"),
+    formatCell(row.totalAmount, "number"), formatCell(row.approvedAt, "text"),
+    formatCell(row.decidedBy, "text"),
+  ];
+}
+
+function lineCells(row: LinesCsvRow): string[] {
+  return [
+    formatCell(row.documentId, "text"),
+    formatCell(row.lineNumber === null ? null : String(row.lineNumber), "number"),
+    formatCell(row.description, "text"), formatCell(row.quantity, "number"),
+    formatCell(row.unitPrice, "number"), formatCell(row.lineTotal, "number"),
+  ];
 }
 
 export function buildMainCsv(
-  rows: MainCsvRow[],
+  rows: Iterable<MainCsvRow>,
   options: CsvOptions = DEFAULT_CSV_OPTIONS,
 ): string {
-  return buildCsv(
-    MAIN_HEADER,
-    rows.map((row) => [
-      formatCell(row.id, "text"),
-      formatCell(row.supplierName, "text"),
-      formatCell(row.supplierTaxId, "text"),
-      formatCell(row.invoiceNumber, "text"),
-      formatCell(row.issueDate, "text"),
-      formatCell(row.currency, "text"),
-      formatCell(row.totalAmount, "number"),
-      formatCell(row.approvedAt, "text"),
-      formatCell(row.decidedBy, "text"),
-    ]),
-    options,
-  );
+  const writer = new CsvWriter(options, MAIN_HEADER);
+  for (const row of rows) writer.row(mainCells(row));
+  return writer.text();
 }
 
 export function buildLinesCsv(
-  rows: LinesCsvRow[],
+  rows: Iterable<LinesCsvRow>,
   options: CsvOptions = DEFAULT_CSV_OPTIONS,
 ): string {
-  return buildCsv(
-    LINES_HEADER,
-    rows.map((row) => [
-      formatCell(row.documentId, "text"),
-      formatCell(
-        row.lineNumber === null ? null : String(row.lineNumber),
-        "number",
-      ),
-      formatCell(row.description, "text"),
-      formatCell(row.quantity, "number"),
-      formatCell(row.unitPrice, "number"),
-      formatCell(row.lineTotal, "number"),
-    ]),
-    options,
-  );
+  const writer = new CsvWriter(options, LINES_HEADER);
+  for (const row of rows) writer.row(lineCells(row));
+  return writer.text();
+}
+
+export type CsvRows<T> = Iterable<T> | AsyncIterable<T>;
+
+/** El consumidor controla la demanda: un 413 cierra el iterador antes de
+ * solicitar otra fila/página. El buffer se entrega solo al finalizar todo.
+ */
+export async function buildCsvIncrementally<T extends MainCsvRow | LinesCsvRow>(
+  rows: CsvRows<T>,
+  file: T extends MainCsvRow ? "main" : "lines",
+  options: CsvOptions = DEFAULT_CSV_OPTIONS,
+): Promise<{ buffer: Buffer; rowCount: number }> {
+  const writer = new CsvWriter(options, file === "main" ? MAIN_HEADER : LINES_HEADER);
+  let rowCount = 0;
+  for await (const row of rows) {
+    writer.row("documentId" in row ? lineCells(row) : mainCells(row));
+    rowCount++;
+  }
+  return { buffer: Buffer.from(writer.text(), "utf8"), rowCount };
 }
