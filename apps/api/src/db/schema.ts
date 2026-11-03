@@ -587,6 +587,8 @@ export const exports = pgTable(
       .references(() => organizations.id, { onDelete: "restrict" }),
     requestedBy: text("requested_by").notNull(),
     status: text("status").notNull().default("pending"),
+    format: text("format").notNull().default("csv"),
+    selectionFilters: jsonb("selection_filters").$type<import("@pensia-docflow/shared").ExportSelectionFilters>(),
     mainFileName: text("main_file_name"),
     linesFileName: text("lines_file_name"),
     documentCount: integer("document_count").notNull().default(0),
@@ -598,6 +600,7 @@ export const exports = pgTable(
       "exports_status_check",
       sql`${t.status} IN ('pending', 'completed', 'failed')`,
     ),
+    check("exports_format_check", sql`${t.format} = 'csv'`),
     check("exports_count_check", sql`${t.documentCount} >= 0`),
     index("exports_org_created_idx").on(
       t.organizationId,

@@ -271,7 +271,7 @@ describe("ExportsPage", () => {
             c.method === "POST" &&
             c.url.includes("/organizations/org-1/exports") &&
             JSON.stringify(c.body) ===
-              JSON.stringify({ documentIds: ["doc-ok"] }),
+              JSON.stringify({ documentIds: ["doc-ok"], format: "csv" }),
         ),
       ).toBe(true),
     );

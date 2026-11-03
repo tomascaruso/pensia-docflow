@@ -15,6 +15,13 @@
       "when": 1793274966649,
       "tag": "0001_redundant_captain_universe",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793671155650,
+      "tag": "0002_wide_dreadnoughts",
+      "breakpoints": true
     }
   ]
 }

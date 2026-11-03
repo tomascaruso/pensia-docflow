@@ -1,9 +1,8 @@
 /**
  * DocFlow B6 — Tests del límite `maxDocuments` de `createExport`.
  *
- * Archivo SEPARADO de `export-service.test.ts` para que los tests
- * existentes de A-02 queden byte-idénticos: la extensión es aditiva
- * (parámetro opcional) y estos casos solo cubren el parámetro nuevo.
+ * El parámetro puede restringir el máximo; F10b fija un techo de 100
+ * también cuando no se indica un límite explícito.
  */
 
 import { describe, expect, it } from "vitest";
@@ -80,14 +79,15 @@ describe("createExport maxDocuments (B6)", () => {
     expect(result).toEqual({ exportId: "export-01", documentCount: 2 });
   });
 
-  it("sin maxDocuments → sin límite (comportamiento previo)", async () => {
-    const { deps } = makeDeps(150);
+  it("sin maxDocuments → máximo 100, sin escrituras al superarlo", async () => {
+    const { deps, inserted } = makeDeps(150);
     const ids = Array.from({ length: 150 }, (_v, i) => `doc-${i}`);
-    const result = await createExport(deps, {
+    await expect(createExport(deps, {
       organizationId: "org-01",
       actorUserId: "admin-01",
       documentIds: ids,
-    });
-    expect(result.documentCount).toBe(150);
+    })).rejects.toBeInstanceOf(ExportTooManyDocumentsError);
+    expect(inserted.exports).toBe(0);
+    expect(inserted.items).toBe(0);
   });
 });

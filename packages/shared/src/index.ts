@@ -276,8 +276,18 @@ export interface ResolveCandidateRequest {
   justification: string;
 }
 
+export const EXPORT_SELECTION_MAX = 100;
+export interface ExportSelectionFilters {
+  approvedFrom: string | null;
+  approvedTo: string | null;
+  supplier: string | null;
+}
 export interface CreateExportRequest {
   documentIds: string[];
+  approvedFrom?: string;
+  approvedTo?: string;
+  supplier?: string;
+  format?: "csv";
 }
 
 export interface GrantPermissionRequest {

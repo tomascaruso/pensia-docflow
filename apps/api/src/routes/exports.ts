@@ -70,6 +70,7 @@ import {
   generateExportCsv,
   parseExportFile,
 } from "../services/export-orchestrator.js";
+import { normalizeSelection, ExportSelectionError } from "../services/export-selection.js";
 import { sanitizeFileName } from "./documents-file.js";
 
 export interface RegisterExportRoutesDeps {
@@ -224,6 +225,9 @@ export function registerExportRoutes(
           "la lista de documentos no puede tener duplicados.",
         );
       }
+      let filters;
+      try { filters = normalizeSelection(body as Record<string, unknown>); }
+      catch (error) { if (error instanceof ExportSelectionError) return invalidRequest(reply, error.message); throw error; }
       const details = await deps.db.transaction(async (tx) => {
         const { exportId } = await createExport(
           createExportServiceDeps(tx),
@@ -232,6 +236,7 @@ export function registerExportRoutes(
             actorUserId: user.id,
             documentIds: documentIds as string[],
             maxDocuments: EXPORT_MAX_DOCUMENTS,
+            ...filters,
           },
         );
         const found = await createExportCsvDrizzle(

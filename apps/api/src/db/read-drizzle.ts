@@ -1,18 +1,7 @@
-/**
- * DocFlow F0 — Adaptadores de lectura para el frontend.
- *
- * Solo lecturas. Cada función hace consultas `eq`/`and` con
- * `.limit()` y filtra/ordena/pagina en memoria: el fake de tests
- * solo evalúa cadenas `eq`/`and`/`isNull` y no soporta `or` ni
- * `inArray` (precedente B5: dos consultas AND en vez de una OR
- * para ambos lados de un candidato). Las organizaciones son
- * pequeñas; el mismo criterio en memoria ya lo usan
- * member-drizzle (conteos y orden) y export-csv-drizzle.
- *
- * No se toca schema.ts ni drizzle/: solo selects sobre las
- * tablas existentes.
- */
-import { and, eq } from "drizzle-orm";
+/** Lecturas multi-tenant. Documentos: filtros, conteo y paginación SQL;
+ * las otras lecturas conservan su implementación previa. */
+import { and, eq, count, asc, desc, ilike, or, sql } from "drizzle-orm";
+import { normalizeSelection, selectionPredicate, approvedDecisionJoin, escapeLike } from "../services/export-selection.js";
 import * as schema from "./schema.js";
 import type {
   AuditEvent,
@@ -41,12 +30,18 @@ export { DOCUMENT_STATUSES };
 
 const FETCH_LIMIT = 10000;
 
+interface LimitedSelect extends Promise<Array<Record<string, unknown>>> {
+  offset(n: number): Promise<Array<Record<string, unknown>>>;
+}
+interface ListSelect extends Promise<Array<Record<string, unknown>>> {
+  orderBy(...columns: unknown[]): { limit(n: number): LimitedSelect };
+  limit(n: number): LimitedSelect;
+}
 export interface ReadDrizzleClient {
   select(fields: Record<string, unknown>): {
     from(table: unknown): {
-      where(condition: unknown): {
-        limit(n: number): Promise<Array<Record<string, unknown>>>;
-      };
+      where(condition: unknown): ListSelect;
+      leftJoin(table: unknown, condition: unknown): { where(condition: unknown): ListSelect };
     };
   };
 }
@@ -238,6 +233,8 @@ export function serializeDocument(row: DocumentRow): Document {
 }
 
 export interface ListDocumentsQuery {
+  approvedFrom?: string | null;
+  approvedTo?: string | null;
   status?: string;
   supplier?: string;
   search?: string;
@@ -251,52 +248,21 @@ export async function listDocumentsOfOrg(
   organizationId: string,
   query: ListDocumentsQuery,
 ): Promise<{ rows: DocumentRow[]; total: number }> {
-  const rows = await client
-    .select(DOCUMENT_FIELDS)
-    .from(schema.documents)
-    .where(eq(schema.documents.organizationId, organizationId))
-    .limit(FETCH_LIMIT);
-  let docs = rows
-    .map((row) => mapDocumentRow(row))
-    .filter((row): row is DocumentRow => row !== null);
-  if (query.status !== undefined) {
-    docs = docs.filter((doc) => doc.status === query.status);
+  const filters = normalizeSelection(query);
+  const clauses = [selectionPredicate(organizationId, filters, { status: query.status })];
+  if (query.search) {
+    const term = `%${escapeLike(query.search)}%`;
+    const cuit = /^\d{11}$/.test(query.search) || /^\d{2}-\d{8}-\d$/.test(query.search);
+    clauses.push(or(ilike(sql`${schema.documents.supplierName} collate "und-x-icu"`, term), ilike(sql`${schema.documents.invoiceNumber} collate "und-x-icu"`, term),
+      cuit ? eq(sql`regexp_replace(${schema.documents.supplierTaxId}, '[^0-9]', '', 'g')`, digitsOnly(query.search)) : undefined)!);
   }
-  if (query.supplier !== undefined && query.supplier !== "") {
-    docs = docs.filter((doc) =>
-      includesIgnoreCase(doc.supplierName, query.supplier as string),
-    );
-  }
-  if (query.search !== undefined && query.search !== "") {
-    const needle = query.search;
-    const needleDigits = digitsOnly(needle);
-    // F4.5: la rama CUIT solo se activa con un CUIT completo: 11
-    // dígitos exactos o formato XX-XXXXXXXX-X. Antes, cualquier
-    // dígito del término matcheaba por CUIT ("F4 A" → "4" y todo
-    // CUIT con un 4 matcheaba), así que buscar un proveedor por
-    // nombre devolvía toda la lista.
-    const isCuitSearch =
-      /^\d{11}$/.test(needle) || /^\d{2}-\d{8}-\d{1}$/.test(needle);
-    docs = docs.filter((doc) => {
-      if (
-        includesIgnoreCase(doc.supplierName, needle) ||
-        includesIgnoreCase(doc.invoiceNumber, needle)
-      ) {
-        return true;
-      }
-      if (
-        isCuitSearch &&
-        needleDigits !== "" &&
-        doc.supplierTaxId !== null
-      ) {
-        return digitsOnly(doc.supplierTaxId).includes(needleDigits);
-      }
-      return false;
-    });
-  }
-  docs.sort(query.order === "asc" ? byCreatedAsc : byCreatedDesc);
-  const total = docs.length;
-  return { rows: paginate(docs, query.limit, query.offset), total };
+  const condition = and(...clauses);
+  const join = approvedDecisionJoin;
+  const totals = await client.select({ total: count() }).from(schema.documents).leftJoin(schema.documentDecisions, join).where(condition);
+  const rows = await client.select(DOCUMENT_FIELDS).from(schema.documents).leftJoin(schema.documentDecisions, join).where(condition)
+    .orderBy(query.order === "asc" ? asc(schema.documents.createdAt) : desc(schema.documents.createdAt), asc(schema.documents.id))
+    .limit(query.limit).offset(query.offset);
+  return { rows: rows.map(mapDocumentRow).filter((row): row is DocumentRow => row !== null), total: Number(totals[0]?.["total"] ?? 0) };
 }
 
 export interface FieldRow {

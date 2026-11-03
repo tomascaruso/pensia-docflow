@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -356,4 +357,79 @@ test.describe("S7 Exportaciones", () => {
     expect(download.suggestedFilename()).toContain("docflow-exportacion");
     expect(download.suggestedFilename()).toMatch(/\.csv$/);
   });
+  async function seedFiltered(tag: string) {
+    const values = Array.from({ length: 31 }, (_, i) => `('${orgId}', 'f10b-${tag}-${i}.pdf', '${createHash("sha256").update(`f10b-${tag}-${i}`).digest("hex")}', 'application/pdf', 100, 'approved', '${i === 0 ? "Dirección Sur " : ""}F10b-${tag}', TIMESTAMPTZ '2026-02-01 00:00:00Z' + INTERVAL '${i} minutes')`).join(",");
+    psql(`INSERT INTO documents (organization_id,file_name,file_hash,mime_type,size_bytes,status,supplier_name,created_at) VALUES ${values};
+      INSERT INTO document_decisions (document_id,decided_by,decision,decided_at)
+      SELECT d.id,u.id,'approved',CASE WHEN d.file_name='f10b-${tag}-0.pdf' THEN TIMESTAMPTZ '2026-02-10 03:00:00Z' ELSE TIMESTAMPTZ '2026-02-11 03:00:00Z' END
+      FROM documents d CROSS JOIN "user" u WHERE d.organization_id='${orgId}' AND d.file_name LIKE 'f10b-${tag}-%' AND u.email='${ADMIN_EMAIL}';`);
+  }
+
+  test("F10b rango inclusivo de aprobación encuentra el documento después de la primera página", async ({ page }) => {
+    await seedFiltered("rango");
+    await login(page);
+    await page.goto(`/o/${orgId}/exportaciones`);
+    await page.getByRole("button", { name: "Nueva exportación", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Nueva exportación" });
+    await dialog.getByLabel("Aprobados desde").fill("2026-02-10");
+    await dialog.getByLabel("Aprobados hasta").fill("2026-02-10");
+    await dialog.getByLabel("Proveedor", { exact: true }).fill("F10b-rango");
+    await dialog.getByRole("button", { name: "Aplicar filtros", exact: true }).click();
+    await expect(dialog.getByText(/Mostrando 1–1 de 1/)).toBeVisible();
+    await dialog.getByLabel(/f10b-rango-0\.pdf/).check();
+    await dialog.getByRole("button", { name: "Crear exportación", exact: true }).click();
+    await expect(page.getByText("Exportación creada.")).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test("F10b proveedor literal Dirección Sur crea exportación con auditoría segura", async ({ page }) => {
+    await seedFiltered("proveedor");
+    await login(page);
+    await page.goto(`/o/${orgId}/exportaciones`);
+    await page.getByRole("button", { name: "Nueva exportación", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Nueva exportación" });
+    await dialog.getByLabel("Proveedor", { exact: true }).fill("dirección sur f10b-proveedor");
+    await dialog.getByRole("button", { name: "Aplicar filtros", exact: true }).click();
+    await expect(dialog.getByText(/Mostrando 1–1 de 1/)).toBeVisible();
+    await dialog.getByLabel(/f10b-proveedor-0\.pdf/).check();
+    await dialog.getByRole("button", { name: "Crear exportación", exact: true }).click();
+    await expect(page.getByText("Exportación creada.")).toBeVisible();
+  });
+
+  test("F10b selección explícita entre páginas conserva IDs y selector de esta página", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await seedFiltered("paginas");
+    await login(page);
+    await page.goto(`/o/${orgId}/exportaciones`);
+    await page.getByRole("button", { name: "Nueva exportación", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Nueva exportación" });
+    await dialog.getByLabel("Proveedor", { exact: true }).fill("F10b-paginas");
+    await dialog.getByRole("button", { name: "Aplicar filtros", exact: true }).click();
+    await expect(dialog.getByText(/Mostrando 1–25 de 31/)).toBeVisible();
+    await dialog.getByLabel(/f10b-paginas-30\.pdf/).check();
+    await expect(dialog.getByRole("button", { name: "Crear exportación", exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByRole("button", { name: "Siguiente", exact: true })).toBeInViewport({ ratio: 1 });
+    await page.waitForTimeout(600);
+    const firstPagePath = testInfo.outputPath("f10b-filtered-page-1.png");
+    await page.screenshot({ path: firstPagePath });
+    await testInfo.attach("F10b filtros página inicial", { path: firstPagePath, contentType: "image/png" });
+    await dialog.getByRole("button", { name: "Siguiente", exact: true }).click();
+    await expect(dialog.getByText(/Mostrando 26–31 de 31/)).toBeVisible();
+    await dialog.getByLabel(/f10b-paginas-0\.pdf/).check();
+    await expect(dialog.getByText("2 seleccionados · Máximo 100", { exact: true })).toBeVisible();
+    await dialog.getByLabel("Seleccionar esta página", { exact: true }).check();
+    await expect(dialog.getByText("7 seleccionados · Máximo 100", { exact: true })).toBeVisible();
+    await dialog.getByLabel("Seleccionar esta página", { exact: true }).uncheck();
+    await expect(dialog.getByText("1 seleccionados · Máximo 100", { exact: true })).toBeVisible();
+    await dialog.getByLabel(/f10b-paginas-0\.pdf/).check();
+    await page.waitForTimeout(600);
+    const path = testInfo.outputPath("f10b-filtered-page-2.png");
+    await page.screenshot({ path });
+    await testInfo.attach("F10b filtros y selección paginada", { path, contentType: "image/png" });
+    await dialog.getByRole("button", { name: "Anterior", exact: true }).click();
+    await expect(dialog.getByLabel(/f10b-paginas-30\.pdf/)).toBeChecked();
+    await dialog.getByRole("button", { name: "Crear exportación", exact: true }).click();
+    await expect(page.getByText("Exportación creada.")).toBeVisible();
+  });
+
 });

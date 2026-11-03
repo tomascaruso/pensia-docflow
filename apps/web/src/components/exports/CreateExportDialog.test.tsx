@@ -39,7 +39,7 @@ function docRow(id: string, status: string) {
 }
 
 function renderDialog(props: {
-  onCreate?: (ids: string[]) => void;
+  onCreate?: (input: import("@pensia-docflow/shared").CreateExportRequest) => void;
   isCreating?: boolean;
 }) {
   const client = new QueryClient({
@@ -82,6 +82,31 @@ function renderDialog(props: {
 }
 
 describe("CreateExportDialog", () => {
+  it("limita a 100 entre páginas sin seleccionar parcialmente una página adicional", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const offset = Number(new URL(url, "http://local").searchParams.get("offset"));
+      return jsonResponse(200, {
+        documents: Array.from({ length: Math.min(25, 101 - offset) }, (_, i) => docRow(`limite-${offset + i}`, "approved")),
+        total: 101, limit: 25, offset,
+      });
+    }));
+    const onCreate = vi.fn();
+    render(<QueryClientProvider client={client}><CreateExportDialog open onOpenChange={() => {}} orgId="limite" onCreate={onCreate} isCreating={false} /></QueryClientProvider>);
+    const user = userEvent.setup();
+    for (let page = 0; page < 4; page++) {
+      await screen.findByLabelText(new RegExp(`limite-${page * 25}\\.pdf`));
+      await user.click(screen.getByLabelText("Seleccionar esta página"));
+      await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    }
+    expect(await screen.findByLabelText(/limite-100\.pdf/)).toBeDisabled();
+    expect(screen.getByLabelText("Seleccionar esta página")).toBeDisabled();
+    expect(screen.getByText("100 seleccionados · Máximo 100")).toBeInTheDocument();
+    expect(screen.getByText("0 de 1 seleccionados")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Crear exportación" }));
+    expect(onCreate).toHaveBeenCalledWith({ documentIds: Array.from({ length: 100 }, (_, i) => `limite-${i}`), format: "csv" });
+  });
+
   it("aprobado habilitado, no aprobado deshabilitado con texto del spec", async () => {
     renderDialog({});
     const approved = await screen.findByLabelText(/doc-ok\.pdf/);
@@ -105,7 +130,7 @@ describe("CreateExportDialog", () => {
     await user.click(approved);
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
-    expect(onCreate).toHaveBeenCalledWith(["doc-ok"]);
+    expect(onCreate).toHaveBeenCalledWith({ documentIds: ["doc-ok"], format: "csv" });
   });
 
   it("isCreating deshabilita crear y cancelar", async () => {
@@ -181,7 +206,7 @@ describe("CreateExportDialog", () => {
     const onCreate = vi.fn();
     const user = userEvent.setup();
     renderDialog({ onCreate });
-    const master = await screen.findByLabelText("Seleccionar todos");
+    const master = await screen.findByLabelText("Seleccionar esta página");
     // Un solo aprobado → estado intermedio.
     await user.click(screen.getByLabelText(/doc-ok\.pdf/));
     await waitFor(() =>
@@ -203,9 +228,9 @@ describe("CreateExportDialog", () => {
     await user.click(
       screen.getByRole("button", { name: "Crear exportación" }),
     );
-    expect(onCreate).toHaveBeenCalledWith(["doc-ok", "doc-ok2"]);
+    expect(onCreate).toHaveBeenCalledWith({ documentIds: ["doc-ok", "doc-ok2"], format: "csv" });
     // Destildar el maestro → limpia la selección.
-    await user.click(screen.getByLabelText("Seleccionar todos"));
+    await user.click(screen.getByLabelText("Seleccionar esta página"));
     await waitFor(() =>
       expect(
         screen.getByText("0 de 3 seleccionados"),
@@ -215,4 +240,39 @@ describe("CreateExportDialog", () => {
       screen.getByRole("button", { name: "Crear exportación" }),
     ).toBeDisabled();
   });
+  it("F10b conserva selección entre páginas, limpia al aplicar/limpiar filtros y al reabrir", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const calls: URL[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const parsed = new URL(url, "http://local"); calls.push(parsed);
+      const offset = Number(parsed.searchParams.get("offset") ?? 0);
+      return jsonResponse(200, { documents: [docRow(offset ? "segunda" : "primera", "approved")], total: 26, limit: 25, offset });
+    }));
+    const onCreate = vi.fn();
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { rerender } = render(<CreateExportDialog open onOpenChange={() => {}} orgId="org-1" onCreate={onCreate} isCreating={false} />, { wrapper });
+    const user = userEvent.setup();
+    await user.click(await screen.findByLabelText(/primera\.pdf/));
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(await screen.findByLabelText(/segunda\.pdf/));
+    expect(screen.getByText("2 seleccionados · Máximo 100")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Crear exportación" }));
+    expect(onCreate).toHaveBeenCalledWith({ documentIds: ["primera", "segunda"], format: "csv" });
+    await user.type(screen.getByLabelText("Proveedor"), "Dirección Sur");
+    await user.click(screen.getByRole("button", { name: "Aplicar filtros" }));
+    await waitFor(() => expect(calls.at(-1)?.searchParams.get("supplier")).toBe("Dirección Sur"));
+    expect(calls.at(-1)?.searchParams.get("offset")).toBe("0");
+    expect(screen.getByText("0 seleccionados · Máximo 100")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Crear exportación" })).toBeDisabled();
+    await user.click(await screen.findByLabelText(/primera\.pdf/));
+    await user.click(screen.getByRole("button", { name: "Limpiar filtros" }));
+    expect(screen.getByLabelText("Proveedor")).toHaveValue("");
+    expect(screen.getByText("0 seleccionados · Máximo 100")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Proveedor"), "Otro");
+    rerender(<CreateExportDialog open={false} onOpenChange={() => {}} orgId="org-1" onCreate={onCreate} isCreating={false} />);
+    rerender(<CreateExportDialog open onOpenChange={() => {}} orgId="org-1" onCreate={onCreate} isCreating={false} />);
+    expect(screen.getByLabelText("Proveedor")).toHaveValue("");
+    expect(screen.getByText("0 seleccionados · Máximo 100")).toBeInTheDocument();
+  });
+
 });

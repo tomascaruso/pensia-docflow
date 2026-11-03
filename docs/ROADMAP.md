@@ -107,3 +107,21 @@
 - Permiso de aprobación de `reviewer`: representación, concesión,
   revocación, verificación en backend, auditoría y mapeo Better Auth
   definidos.
+
+
+## F10b — Exportaciones con filtros y selección paginada
+
+Alcance: selección explícita de hasta 100 documentos entre páginas, filtro por
+fecha de aprobación UTC−03 y proveedor literal, validación backend transaccional,
+conteos completos SQL y migración aditiva 0002 de formato/filtros. Solo CSV.
+Los criterios completos se guardan en exports; auditoría solo fechas, formato e
+indicador booleano de proveedor, sin su texto libre ni cambios al escritor.
+Los filtros de duplicados quedan diferidos, fuera de F10b. La revisión visual,
+la aprobación de release y cualquier publicación remota requieren orden aparte.
+
+Correcciones de revisión F10b: predicado PostgreSQL común para listado y creación
+transaccional, soporte del último día 9999-12-31 y rechazo total de selecciones
+inválidas. La comprobación manual requerida de `und-x-icu` está en S7 de
+SCREENS_SPEC.md; no se incorporan infraestructura ni cambios de colación.
+El fake valida su gramática acotada antes de evaluar filas; su ILIKE es una
+aproximación para fixtures, y la paridad Unicode se demuestra con PostgreSQL real.

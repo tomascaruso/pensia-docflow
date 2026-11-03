@@ -9,6 +9,9 @@ import { queryKeys } from "../lib/query-keys";
 export interface DocumentFilters {
   status?: DocumentStatus;
   search?: string;
+  supplier?: string;
+  approvedFrom?: string;
+  approvedTo?: string;
 }
 
 export const DOCUMENTS_PAGE_SIZE = 25;
@@ -34,6 +37,9 @@ export function useDocuments(
   if (filters.search !== undefined && filters.search !== "") {
     params.set("search", filters.search);
   }
+  for (const key of ["supplier", "approvedFrom", "approvedTo"] as const) {
+    if (filters[key]) params.set(key, filters[key]);
+  }
   params.set("limit", String(limit));
   params.set("offset", String(offset));
   params.set("order", order);
@@ -42,6 +48,9 @@ export function useDocuments(
     queryKey: queryKeys.orgDocuments(orgId, {
       status: filters.status,
       search: filters.search,
+      supplier: filters.supplier,
+      approvedFrom: filters.approvedFrom,
+      approvedTo: filters.approvedTo,
       limit,
       offset,
       order,

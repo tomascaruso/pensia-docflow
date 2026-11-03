@@ -219,43 +219,7 @@ async function buildTestApp(
   seedOrg(tables, "org-02");
   seed(tables);
   const db = createFakeDb(tables);
-  // El fake no resuelve `where` sin `limit` (su `where` no es
-  // thenable); Drizzle real sí lo es. El envoltorio agrega `then`
-  // vía limit sin cambiar la semántica: necesario porque A-02
-  // (`findExportItems`) espera `where` sin `limit`. Dentro de
-  // `db.transaction` el fake pasa el cliente crudo, pero el POST
-  // no usa `findExportItems` (todas sus consultas encadenan
-  // limit), así que el envoltorio solo afecta al GET.
-  const rawSelect = db.select.bind(db);
-  const wrappedDb = {
-    ...db,
-    select: (fields: Record<string, unknown>) => {
-      const chain = rawSelect(fields as never) as {
-        from: (table: unknown) => {
-          where: (condition: unknown) => {
-            limit: (n: number) => Promise<unknown>;
-          };
-        };
-      };
-      return {
-        from: (table: unknown) => {
-          const fromChain = chain.from(table);
-          return {
-            where: (condition: unknown) => {
-              const w = fromChain.where(condition);
-              return {
-                ...w,
-                then: (
-                  resolve: (value: unknown) => void,
-                  reject: (reason: unknown) => void,
-                ) => w.limit(Number.MAX_SAFE_INTEGER).then(resolve, reject),
-              };
-            },
-          };
-        },
-      };
-    },
-  };
+  // El fake ya ofrece consultas thenable y LEFT JOIN, sin un envoltorio que los oculte.
   const session = sessionUser === null ? null : fakeSession(sessionUser.id);
   const fakeAuth = {
     api: {
@@ -268,7 +232,7 @@ async function buildTestApp(
   };
   const app = Fastify();
   registerExportRoutes(app, {
-    db: wrappedDb as unknown as NodePgDatabase,
+    db: db as unknown as NodePgDatabase,
     auth: fakeAuth as never,
   });
   app.setErrorHandler((error, _request, reply) => {

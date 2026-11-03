@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
+import type { CreateExportRequest } from "@pensia-docflow/shared";
+import { EXPORT_SELECTION_MAX } from "@pensia-docflow/shared";
+import { Pagination } from "../documents/Pagination";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import {
   Dialog,
   DialogContent,
@@ -8,30 +12,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
-import { useDocuments } from "../../hooks/useDocuments";
+import { useDocuments, DOCUMENTS_PAGE_SIZE, type DocumentFilters } from "../../hooks/useDocuments";
 
 interface CreateExportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orgId: string;
-  onCreate: (documentIds: string[]) => void;
+  onCreate: (input: CreateExportRequest) => void;
   isCreating: boolean;
 }
 
-/**
- * Diálogo de creación S7 (F8). Spec §S7 "Crear exportación":
- * botón "Nueva exportación" → diálogo con selección de
- * documentos (solo approved; los no aprobados aparecen con la
- * casilla deshabilitada y el texto "Solo se exportan
- * documentos aprobados"). El spec nombra además rango de
- * fechas de aprobación y formato CSV, pero el backend solo
- * acepta { documentIds } en el POST: esos dos campos no se
- * renderizan ni se envían (no se inventan campos). El diálogo
- * muestra la primera página de documentos (25, orden
- * descendente); si la org tiene más, se avisa en pantalla.
- * Presentacional: la mutación vive en useCreateExport y la
- * pasa ExportsPage.
- */
+/** S7: filtros aplicados en backend y selección explícita entre páginas. */
 export function CreateExportDialog({
   open,
   onOpenChange,
@@ -42,20 +33,33 @@ export function CreateExportDialog({
   const [selected, setSelected] = useState<ReadonlySet<string>>(
     new Set(),
   );
-  const documentsQuery = useDocuments(orgId, {}, 1, "desc");
+  const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<DocumentFilters>({});
+  const [draft, setDraft] = useState({ approvedFrom: "", approvedTo: "", supplier: "" });
+  const documentsQuery = useDocuments(orgId, filters, page, "desc");
+  const invalidDate = (v: string) => v !== "" && (v.startsWith("0000-") || !/^\d{4}-\d{2}-\d{2}$/.test(v) || !Number.isFinite(Date.parse(`${v}T00:00:00Z`)) || new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) !== v);
+  const invalidFilters = invalidDate(draft.approvedFrom) || invalidDate(draft.approvedTo) ||
+    (draft.approvedFrom !== "" && draft.approvedTo !== "" && draft.approvedFrom > draft.approvedTo) || draft.supplier.trim().length > 200;
+  function applyFilters(clear = false) {
+    const next = clear ? { approvedFrom: "", approvedTo: "", supplier: "" } : draft;
+    if (clear) setDraft(next);
+    setFilters({ approvedFrom: next.approvedFrom || undefined, approvedTo: next.approvedTo || undefined, supplier: next.supplier.trim() || undefined });
+    setSelected(new Set()); setPage(1);
+  }
 
   useEffect(() => {
     if (open) {
       setSelected(new Set());
+      setPage(1); setFilters({}); setDraft({ approvedFrom: "", approvedTo: "", supplier: "" });
     }
-  }, [open ]);
+  }, [open]);
 
   function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
-      } else {
+      } else if (next.size < EXPORT_SELECTION_MAX) {
         next.add(id);
       }
       return next;
@@ -69,28 +73,43 @@ export function CreateExportDialog({
   // toca aprobados (los no aprobados nunca son seleccionables).
   const approvedDocs = documents.filter((doc) => doc.status === "approved");
   const allApprovedSelected =
-    approvedDocs.length > 0 && selected.size === approvedDocs.length;
+    approvedDocs.length > 0 && approvedDocs.every(doc => selected.has(doc.id));
   const someApprovedSelected =
-    selected.size > 0 && selected.size < approvedDocs.length;
+    approvedDocs.some(doc => selected.has(doc.id)) && !allApprovedSelected;
 
   function toggleAll() {
-    if (allApprovedSelected) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(approvedDocs.map((doc) => doc.id)));
-    }
+    setSelected(prev => {
+      const next = new Set(prev);
+      for (const doc of approvedDocs) {
+        if (allApprovedSelected) next.delete(doc.id);
+        else if (next.size < EXPORT_SELECTION_MAX) next.add(doc.id);
+      }
+      return next;
+    });
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90vh] flex-col overflow-y-auto">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Nueva exportación</DialogTitle>
           <DialogDescription>
             Solo se exportan documentos aprobados. Cada exportación
             queda registrada; re-exportar crea un registro nuevo.
           </DialogDescription>
         </DialogHeader>
+        <div className="grid shrink-0 gap-2">
+          <p className="text-sm text-slate-500">Las fechas de aprobación usan hora Argentina (UTC−03:00), días inclusivos.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="grid gap-1 text-sm">Aprobados desde<Input type="date" value={draft.approvedFrom} onChange={e => setDraft({ ...draft, approvedFrom: e.target.value })} disabled={isCreating} /></label>
+            <label className="grid gap-1 text-sm">Aprobados hasta<Input type="date" value={draft.approvedTo} onChange={e => setDraft({ ...draft, approvedTo: e.target.value })} disabled={isCreating} /></label>
+          </div>
+          <label className="grid gap-1 text-sm">Proveedor<Input value={draft.supplier} maxLength={200} onChange={e => setDraft({ ...draft, supplier: e.target.value })} disabled={isCreating} /></label>
+          <p className="text-sm text-slate-500">Formato: CSV — archivo principal y archivo de líneas</p>
+          {invalidFilters && <p role="alert">Filtros inválidos: revisá las fechas, su orden y el proveedor (máximo 200 caracteres).</p>}
+          <div className="flex gap-2"><Button variant="outline" disabled={invalidFilters || isCreating} onClick={() => applyFilters()}>Aplicar filtros</Button><Button variant="outline" disabled={isCreating} onClick={() => applyFilters(true)}>Limpiar filtros</Button></div>
+          <p>{selected.size} seleccionados · Máximo {EXPORT_SELECTION_MAX}</p>
+        </div>
         {documentsQuery.isPending && (
           <p className="text-sm text-slate-500">
             Cargando documentos…
@@ -102,7 +121,8 @@ export function CreateExportDialog({
           </p>
         )}
         {!documentsQuery.isPending && !documentsQuery.isError && (
-          <div className="flex flex-col gap-2">
+          <>
+          <div className="flex min-h-0 max-h-[40vh] flex-col gap-2 overflow-y-auto">
             {documents.length === 0 && (
               <p className="text-sm text-slate-500">
                 No hay documentos para exportar.
@@ -120,15 +140,15 @@ export function CreateExportDialog({
                         el.indeterminate = someApprovedSelected;
                       }
                     }}
-                    disabled={approvedDocs.length === 0 || isCreating}
+                    disabled={approvedDocs.length === 0 || isCreating || (!allApprovedSelected && selected.size + approvedDocs.filter(doc => !selected.has(doc.id)).length > EXPORT_SELECTION_MAX)}
                     onChange={toggleAll}
                   />
                   <label htmlFor="export-select-all" className="text-sm">
-                    Seleccionar todos
+                    Seleccionar esta página
                   </label>
                 </div>
                 <p className="text-sm text-slate-500">
-                  {selected.size} de {documents.length} seleccionados
+                  {documents.filter(doc => selected.has(doc.id)).length} de {documents.length} seleccionados
                 </p>
               </div>
             )}
@@ -142,7 +162,7 @@ export function CreateExportDialog({
                       id={inputId}
                       type="checkbox"
                       checked={selected.has(doc.id)}
-                      disabled={!approved || isCreating}
+                      disabled={!approved || isCreating || (!selected.has(doc.id) && selected.size >= EXPORT_SELECTION_MAX)}
                       onChange={() => toggle(doc.id)}
                     />
                     <label htmlFor={inputId} className="text-sm">
@@ -158,14 +178,11 @@ export function CreateExportDialog({
                 </div>
               );
             })}
-            {total > documents.length && (
-              <p className="text-sm text-slate-500">
-                Se muestran los 25 más recientes.
-              </p>
-            )}
           </div>
+          <fieldset className="shrink-0" disabled={isCreating}><Pagination total={total} limit={DOCUMENTS_PAGE_SIZE} offset={(page - 1) * DOCUMENTS_PAGE_SIZE} onPageChange={next => { if (!isCreating) setPage(next); }} /></fieldset>
+          </>
         )}
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -174,8 +191,8 @@ export function CreateExportDialog({
             Cancelar
           </Button>
           <Button
-            disabled={selected.size === 0 || isCreating}
-            onClick={() => onCreate(Array.from(selected))}
+            disabled={selected.size === 0 || selected.size > EXPORT_SELECTION_MAX || isCreating || invalidFilters || documentsQuery.isPending || documentsQuery.isError}
+            onClick={() => onCreate({ documentIds: Array.from(selected), ...filters, format: "csv" })}
           >
             Crear exportación
           </Button>
