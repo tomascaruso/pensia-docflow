@@ -144,7 +144,7 @@ describe("useDuplicateCandidates", () => {
     );
   });
 
-  it("vista pendientes envía status=pending y onlyPendingEffective=true", async () => {
+  it("vista pendientes envía view sin parámetros legados ambiguos", async () => {
     const { calledUrls } = stubFetch({
       candidates: [],
       total: 0,
@@ -161,8 +161,9 @@ describe("useDuplicateCandidates", () => {
     const listUrl = calledUrls.find((u) =>
       u.includes("/duplicate-candidates"),
     );
-    expect(listUrl).toContain("status=pending");
-    expect(listUrl).toContain("onlyPendingEffective=true");
+    expect(listUrl).toContain("view=pendientes");
+    expect(listUrl).not.toContain("onlyPendingEffective");
+    expect(listUrl).not.toContain("status=");
   });
 
   it("error de lista → isError", async () => {
@@ -178,29 +179,31 @@ describe("useDuplicateCandidates", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 
-  it("vista resueltos filtra los pendientes en cliente", async () => {
-    stubFetch({
+  it("vista resueltos pagina en servidor y conserva su total completo", async () => {
+    const { calledUrls } = stubFetch({
       candidates: [
-        makeCandidate("c-1"),
         makeCandidate("c-2", { status: "duplicate" }),
       ],
-      total: 2,
-      limit: 100,
-      offset: 0,
+      total: 126,
+      limit: 25,
+      offset: 25,
     });
     const { result } = renderHook(
-      () => useDuplicateCandidates("org-1", { view: "resueltos" }, 1),
+      () => useDuplicateCandidates("org-1", { view: "resueltos", supplier: "  Sur  ",kind:"business_exact" }, 2),
       { wrapper: wrapper() },
     );
     await waitFor(() =>
       expect(result.current.isPending).toBe(false),
     );
-    expect(result.current.total).toBe(1);
+    expect(result.current.total).toBe(126);
     expect(result.current.rows).toHaveLength(1);
     expect(result.current.rows[0]?.candidate.id).toBe("c-2");
+    const url = new URL(calledUrls[0]!,"http://local");
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({view:"resueltos",supplier:"Sur",kind:"business_exact",limit:"25",offset:"25"});
+    expect(calledUrls.some(url=>url.includes("/documents?"))).toBe(false);
   });
 
-  it("filtro proveedor usa la búsqueda y el filtro exacto", async () => {
+  it("filtro proveedor lo decide el backend aunque fallen detalles", async () => {
     stubFetch(
       {
         candidates: [makeCandidate("c-1")],
@@ -227,4 +230,12 @@ describe("useDuplicateCandidates", () => {
       "Otro Proveedor",
     );
   });
+});
+
+it("un detalle fallido degrada a null sin quitar el candidato ni alterar total", async () => {
+  vi.stubGlobal("fetch",vi.fn(async(url:string)=> url.includes("duplicate-candidates") ? jsonResponse(200,{ candidates:[makeCandidate("c")],total:250,limit:25,offset:25 }) : jsonResponse(404,{error:"not_found"})));
+  const {result}=renderHook(()=>useDuplicateCandidates("org",{view:"todos",supplier:"Sur"},2),{wrapper:wrapper()});
+  await waitFor(()=>expect(result.current.isPending).toBe(false));
+  expect(result.current.isError).toBe(false);expect(result.current.total).toBe(250);
+  expect(result.current.rows).toHaveLength(1);expect(result.current.rows[0]?.current).toBeNull();expect(result.current.rows[0]?.compared).toBeNull();
 });

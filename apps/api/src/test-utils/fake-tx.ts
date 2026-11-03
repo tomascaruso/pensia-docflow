@@ -205,7 +205,12 @@ export function createFakeDb(
   tables: Map<unknown, FakeRow[]>,
 ): FakeDb {
   function rowsOf(table: unknown): FakeRow[] {
-    const rows = tables.get(table);
+    let rows = tables.get(table);
+    if (rows === undefined && (table as Record<symbol, unknown>)[Symbol.for("drizzle:IsAlias")] === true) {
+      const original = (table as Record<symbol, unknown>)[Symbol.for("drizzle:OriginalName")];
+      const source = [...tables.keys()].find(key => tableName(key) === original);
+      if (source) rows = tables.get(source);
+    }
     if (rows === undefined) {
       throw new Error("fake-tx: tabla no registrada");
     }
@@ -448,19 +453,24 @@ function compilePredicate(expression: unknown, tables: unknown[]): Predicate {
 }
 
 function fakeSelect(fields: Record<string, unknown>, table: unknown, rowsOf: (table: unknown) => FakeRow[]): FakeSelect {
-  let condition: unknown, joined: unknown, joinOn: unknown;
+  let condition: unknown;
+  const joins: Array<{ table: unknown; on: unknown }> = [];
   let limit = Infinity, offset = 0, orders: unknown[] = [];
   function run(): FakeRow[] {
-    const tables = joined ? [table, joined] : [table];
+    const tables = [table, ...joins.map(join => join.table)];
+    if (new Set(tables.map(tableName)).size !== tables.length) throw new Error("fake-tx: nombres de tabla repetidos");
     // Todas las expresiones se validan antes de leer/evaluar filas.
     const predicate = condition === undefined ? () => true : compilePredicate(condition, tables);
-    const joinPredicate = joined ? compilePredicate(joinOn, tables) : undefined;
+    const compiledJoins = joins.map((join, index) => ({
+      table: join.table,
+      predicate: compilePredicate(join.on, [table, ...joins.slice(0, index + 1).map(j => j.table)]),
+    }));
     const entries = Object.entries(fields);
     if (!entries.length) throw new Error("fake-tx: proyección vacía");
     const countOnly = entries.length === 1 && entries[0][1] instanceof SQL &&
       /^count\(\*\)$/i.test(dialect.sqlToQuery(entries[0][1]).sql.trim());
     const projections = countOnly ? [] : entries.map(([alias, column]) => {
-      if (!is(column, Column) || !tables.includes(column.table)) throw new Error("fake-tx: proyección no soportada");
+      if (!is(column, Column) || !tables.some(t => tableName(t) === tableName(column.table))) throw new Error("fake-tx: proyección no soportada");
       return { alias, read: columnValue(`"${tableName(column.table)}"."${column.name}"`, tables) };
     });
     const sorting = orders.map(order => {
@@ -471,11 +481,11 @@ function fakeSelect(fields: Record<string, unknown>, table: unknown, rowsOf: (ta
     });
     const base = tableName(table);
     let contexts: Context[] = rowsOf(table).map(row => ({ [base]: row }));
-    if (joined && joinPredicate) {
-      const name = tableName(joined);
-      const joinedRows = rowsOf(joined);
+    for (const join of compiledJoins) {
+      const name = tableName(join.table);
+      const joinedRows = rowsOf(join.table);
       contexts = contexts.flatMap(context => {
-        const found = joinedRows.map(row => ({ ...context, [name]: row })).filter(joinPredicate);
+        const found = joinedRows.map(row => ({ ...context, [name]: row })).filter(join.predicate);
         return found.length ? found : [{ ...context, [name]: {} }];
       });
     }
@@ -497,8 +507,8 @@ function fakeSelect(fields: Record<string, unknown>, table: unknown, rowsOf: (ta
   const query = {
     where(value: unknown) { condition = value; return query; },
     leftJoin(value: unknown, on: unknown) {
-      if (joined) throw new Error("fake-tx: solo se admite un LEFT JOIN");
-      joined = value; joinOn = on; return query;
+      if (joins.length >= 2) throw new Error("fake-tx: máximo dos LEFT JOIN");
+      joins.push({ table:value,on }); return query;
     },
     orderBy(...value: unknown[]) { orders = value; return query; },
     limit(value: number) {

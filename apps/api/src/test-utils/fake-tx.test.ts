@@ -1,3 +1,4 @@
+import { alias } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { and, asc, count, eq, gte, ilike, lt, sql } from "drizzle-orm";
 import { createFakeDb } from "./fake-tx.js";
@@ -46,4 +47,20 @@ describe.each([0, 2])("fake: validación previa con %i filas", size => {
     };
     await expect(Promise.resolve().then(query)).rejects.toThrow(/fake-tx:/);
   });
+});
+
+it("dos alias validan ambas organizaciones y rechazan un tercer JOIN", async () => {
+  const a=alias(schema.documents,"current"), b=alias(schema.documents,"compared");
+  const db=createFakeDb(new Map<unknown,Array<Record<string,unknown>>>([
+    [schema.documents,[{id:"a",organizationId:"org"},{id:"b",organizationId:"other"},{id:"c",organizationId:"org"}]],
+    [schema.duplicateCandidates,[{id:"bad",documentId:"a",candidateDocumentId:"b"},{id:"ok",documentId:"a",candidateDocumentId:"c"}]],
+  ]));
+  const query=()=>db.select({id:schema.duplicateCandidates.id}).from(schema.duplicateCandidates)
+    .leftJoin(a,eq(a.id,schema.duplicateCandidates.documentId)).leftJoin(b,eq(b.id,schema.duplicateCandidates.candidateDocumentId));
+  expect(await query().where(and(eq(a.organizationId,"org"),eq(b.organizationId,"org")))).toEqual([{id:"ok"}]);
+  expect(()=>query().leftJoin(schema.organizations,eq(schema.organizations.id,a.organizationId))).toThrow(/máximo dos/);
+  await expect(Promise.resolve().then(()=>db.select({id:schema.duplicateCandidates.id}).from(schema.duplicateCandidates)
+    .leftJoin(a,eq(a.id,b.id)).leftJoin(b,eq(b.id,schema.duplicateCandidates.candidateDocumentId)))).rejects.toThrow(/columna no soportada/);
+  const empty=createFakeDb(new Map([[schema.documents,[]]]));
+  await expect(Promise.resolve().then(()=>empty.select({id:schema.documents.id}).from(schema.documents).leftJoin(a,sql`unsupported(${a.id})`).where(eq(a.id,"a")))).rejects.toThrow(/fake-tx:/);
 });
