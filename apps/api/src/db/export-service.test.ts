@@ -17,6 +17,7 @@ import {
   ExportEmptyError,
   ExportForbiddenError,
   ExportInvalidError,
+  ExportTooManyDocumentsError,
   verifyAllExportsCoherence,
   verifyExportCoherence,
   verifyExportForGeneration,
@@ -136,6 +137,33 @@ function makeDeps(options?: {
 }
 
 describe("createExport — rechazos", () => {
+  it("revalida permiso revocado al comenzar la transacción, sin escrituras", async () => {
+    const { deps, state } = makeDeps();
+    let checks = 0;
+    deps.permissions.hasExportPermission = async () => ++checks === 1;
+    await expect(createExport(deps, {
+      organizationId: ORG_A, actorUserId: ADMIN_A, documentIds: [DOC_AP1],
+    })).rejects.toBeInstanceOf(ExportForbiddenError);
+    expect(checks).toBe(2);
+    expect(state.exports.size).toBe(0);
+    expect(state.items.size).toBe(0);
+    expect(state.audits).toHaveLength(0);
+  });
+
+  it("acepta 100 IDs y rechaza 101 incluso si el consumidor pide un límite mayor", async () => {
+    const { deps, state } = makeDeps();
+    const ids = Array.from({ length: 101 }, (_, i) => `doc-${i}`);
+    for (const id of ids) state.docs.set(id, { organizationId: ORG_A, status: "approved" });
+    await expect(createExport(deps, {
+      organizationId: ORG_A, actorUserId: ADMIN_A, documentIds: ids, maxDocuments: 1000,
+    })).rejects.toBeInstanceOf(ExportTooManyDocumentsError);
+    expect(state.exports.size).toBe(0);
+    await expect(createExport(deps, {
+      organizationId: ORG_A, actorUserId: ADMIN_A, documentIds: ids.slice(0, 100),
+    })).resolves.toMatchObject({ documentCount: 100 });
+    expect([...state.items.values()].flat()).toHaveLength(100);
+  });
+
   it("exportar incluyendo documento cross-org → rechazo total, sin exports ni ítems", async () => {
     const { deps, state } = makeDeps();
     await expect(

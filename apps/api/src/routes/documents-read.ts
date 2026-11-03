@@ -18,6 +18,7 @@ import type {
   DocumentDetailResponse,
   DocumentListResponse,
 } from "@pensia-docflow/shared";
+import { normalizeSelection } from "../services/export-selection.js";
 import type { AuthSessionPort } from "../auth/session.js";
 import { getSession } from "../auth/session.js";
 import {
@@ -79,6 +80,8 @@ function invalidRequest(reply: FastifyReply, message: string): unknown {
 const MAX_LIMIT = 100;
 
 interface ListQuery {
+  approvedFrom?: string | null;
+  approvedTo?: string | null;
   limit: number;
   offset: number;
   status?: string;
@@ -115,13 +118,6 @@ function parseListQuery(query: unknown): ListQuery | null {
     }
     status = q["status"];
   }
-  let supplier: string | undefined;
-  if (q["supplier"] !== undefined) {
-    if (typeof q["supplier"] !== "string") {
-      return null;
-    }
-    supplier = q["supplier"];
-  }
   let search: string | undefined;
   if (q["search"] !== undefined) {
     if (typeof q["search"] !== "string") {
@@ -136,7 +132,10 @@ function parseListQuery(query: unknown): ListQuery | null {
     }
     order = q["order"];
   }
-  return { limit, offset, status, supplier, search, order };
+  try {
+    const filters = normalizeSelection(q);
+    return { limit, offset, status, supplier: filters.supplier ?? undefined, approvedFrom: filters.approvedFrom, approvedTo: filters.approvedTo, search, order };
+  } catch { return null; }
 }
 
 export function registerDocumentsReadRoutes(

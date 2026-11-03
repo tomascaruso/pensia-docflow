@@ -1,3 +1,4 @@
+import { ExportSelectionError } from "../services/export-selection.js";
 /**
  * DocFlow B1/B2 — Mapeo de errores de dominio (D9) a HTTP.
  *
@@ -151,6 +152,7 @@ const INTERNAL: HttpErrorBody = {
 };
 
 export function toHttp(error: unknown): HttpErrorBody | null {
+  if (error instanceof ExportSelectionError) return { status: 400, code: "invalid_request", message: error.message };
   if (error instanceof PermissionMembershipError) {
     return NOT_FOUND;
   }

@@ -1,3 +1,4 @@
+import { ExportSelectionError } from "../services/export-selection.js";
 /**
  * DocFlow B1 — Tests de `toHttp` (D9 → HTTP).
  * Cubren cada clase de error de dominio al menos una vez, más el
@@ -95,3 +96,5 @@ describe("toHttp", () => {
     expect(toHttp(null)).toBeNull();
   });
 });
+
+it("rechazo por filtros se conserva como 400", () => { expect(toHttp(new ExportSelectionError("Documento fuera de filtro"))).toEqual({ status: 400, code: "invalid_request", message: "Documento fuera de filtro" }); });

@@ -77,6 +77,8 @@ describe("createDrizzleExportDocuments", () => {
       id: DOC_AP1,
       organizationId: ORG_A,
       status: "approved",
+      supplierName: null,
+      approvedAt: null,
     });
   });
 

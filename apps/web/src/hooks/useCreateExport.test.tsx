@@ -81,3 +81,15 @@ describe("useCreateExport", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 });
+
+it("envía filtros explícitos y formato sin perder documentIds", async () => {
+  let posted: unknown;
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+    posted = JSON.parse(String(init?.body));
+    return jsonResponse(201, { id: "exp-filtered" });
+  }));
+  const { result } = renderHook(() => useCreateExport("org"), { wrapper: wrapper() });
+  const input = { documentIds: ["uno", "dos"], approvedFrom: "2026-02-01", approvedTo: "2026-02-02", supplier: "Dirección Sur", format: "csv" as const };
+  await act(async () => { await result.current.mutateAsync(input); });
+  expect(posted).toEqual(input);
+});

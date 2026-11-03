@@ -97,9 +97,9 @@ export function ExportsPage() {
     setSearchParams(nextParams, { replace: true });
   }
 
-  function handleCreate(documentIds: string[]) {
+  function handleCreate(input: import("@pensia-docflow/shared").CreateExportRequest) {
     createExport.mutate(
-      { documentIds },
+      input,
       {
         onSuccess: () => {
           toast.success("Exportación creada.");

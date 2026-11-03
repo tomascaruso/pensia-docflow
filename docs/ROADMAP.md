@@ -107,3 +107,14 @@
 - Permiso de aprobación de `reviewer`: representación, concesión,
   revocación, verificación en backend, auditoría y mapeo Better Auth
   definidos.
+
+
+## F10b — Exportaciones con filtros y selección paginada
+
+Alcance: selección explícita de hasta 100 documentos entre páginas, filtro por
+fecha de aprobación UTC−03 y proveedor literal, validación backend transaccional,
+conteos completos SQL y migración aditiva 0002 de formato/filtros. Solo CSV.
+Los criterios completos se guardan en exports; auditoría solo fechas, formato e
+indicador booleano de proveedor, sin su texto libre ni cambios al escritor.
+Los filtros de duplicados quedan diferidos, fuera de F10b. La revisión visual,
+la aprobación de release y cualquier publicación remota requieren orden aparte.

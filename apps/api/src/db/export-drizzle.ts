@@ -72,6 +72,7 @@ export function createDrizzleExportDocuments(
           id: schema.documents.id,
           organizationId: schema.documents.organizationId,
           status: schema.documents.status,
+          supplierName: schema.documents.supplierName,
         })
         .from(schema.documents)
         .where(
@@ -89,7 +90,15 @@ export function createDrizzleExportDocuments(
       if (id === null || org === null || status === null) {
         return null;
       }
-      return { id, organizationId: org, status };
+      const decisions = await db.select({ decidedAt: schema.documentDecisions.decidedAt })
+        .from(schema.documentDecisions)
+        .where(and(eq(schema.documentDecisions.documentId, documentId), eq(schema.documentDecisions.decision, "approved")))
+        .limit(1);
+      return {
+        id, organizationId: org, status,
+        supplierName: asStringOrNull(row?.["supplierName"]),
+        approvedAt: decisions[0]?.["decidedAt"] instanceof Date ? decisions[0]["decidedAt"] : null,
+      };
     },
     async documentExists(documentId) {
       const rows = await db
@@ -109,6 +118,8 @@ export function createDrizzleExportRepository(
     organizationId: string;
     requestedBy: string;
     documentCount: number;
+    format?: "csv";
+    selectionFilters?: import("@pensia-docflow/shared").ExportSelectionFilters;
   }): Promise<{ id: string }>;
   insertExportItem(input: {
     exportId: string;
@@ -126,6 +137,8 @@ export function createDrizzleExportRepository(
           organizationId: input.organizationId,
           requestedBy: input.requestedBy,
           documentCount: input.documentCount,
+          format: input.format ?? "csv",
+          selectionFilters: input.selectionFilters ?? null,
         })
         .returning({ id: schema.exports.id });
       const id = rows[0] === undefined ? null : asStringOrNull(rows[0]["id"]);

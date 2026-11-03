@@ -80,3 +80,16 @@ describe("migraciones H1 (validación estática)", () => {
     expect(sql).not.toMatch(/CREATE EXTENSION/i);
   });
 });
+
+
+describe("migración F10b aditiva", () => {
+  it("agrega formato y filtros sin inventar selección histórica", () => {
+    const file = sqlFiles().find(f => f.startsWith("0002_"));
+    expect(file).toBeDefined();
+    const sql = readFileSync(`${drizzleDir}/${file}`, "utf8");
+    expect(sql).toContain('ADD COLUMN "format" text DEFAULT \'csv\' NOT NULL');
+    expect(sql).toContain('ADD COLUMN "selection_filters" jsonb');
+    expect(sql).toContain("exports_format_check");
+    expect(sql).not.toMatch(/DROP|UPDATE|INSERT/i);
+  });
+});

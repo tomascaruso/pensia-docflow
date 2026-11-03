@@ -35,6 +35,9 @@
  * `export-drizzle.ts`.
  */
 
+import { normalizeSelection, matchesSelection, ExportSelectionError } from "../services/export-selection.js";
+import { EXPORT_SELECTION_MAX } from "@pensia-docflow/shared";
+import type { ExportSelectionFilters } from "@pensia-docflow/shared";
 import type { AuditEventInput } from "./audit-writer.js";
 
 export class ExportError extends Error {
@@ -115,6 +118,8 @@ export interface ExportDocumentRecord {
   id: string;
   organizationId: string;
   status: string;
+  supplierName?: string | null;
+  approvedAt?: Date | null;
 }
 
 export interface ExportDocumentPorts {
@@ -145,6 +150,8 @@ export interface ExportRepository {
     organizationId: string;
     requestedBy: string;
     documentCount: number;
+    format?: "csv";
+    selectionFilters?: ExportSelectionFilters;
   }): Promise<{ id: string }>;
   insertExportItem(input: {
     exportId: string;
@@ -177,10 +184,13 @@ export interface CreateExportInput {
   actorUserId: string;
   documentIds: string[];
   /**
-   * Máximo de documentos, aditivo en B6 (límite de ruta: 100).
-   * Sin el parámetro, sin límite (comportamiento previo intacto).
+   * Permite un límite menor para consumidores internos; nunca supera 100.
    */
   maxDocuments?: number;
+  approvedFrom?: unknown;
+  approvedTo?: unknown;
+  supplier?: unknown;
+  format?: unknown;
 }
 
 export interface CreateExportResult {
@@ -209,14 +219,14 @@ export async function createExport(
   // bucle por documento. Con requireRole en la ruta, el orden
   // observable es permiso → vacío → duplicados → límite → por doc.
   if (
-    input.maxDocuments !== undefined &&
-    input.documentIds.length > input.maxDocuments
+    input.documentIds.length > Math.min(input.maxDocuments ?? EXPORT_SELECTION_MAX, EXPORT_SELECTION_MAX)
   ) {
     throw new ExportTooManyDocumentsError(
-      input.maxDocuments,
+      Math.min(input.maxDocuments ?? EXPORT_SELECTION_MAX, EXPORT_SELECTION_MAX),
       input.documentIds.length,
     );
   }
+  const selectionFilters = normalizeSelection(input);
   const permitted = await deps.permissions.hasExportPermission(
     input.organizationId,
     input.actorUserId,
@@ -231,27 +241,36 @@ export async function createExport(
     });
     throw new ExportForbiddenError();
   }
-  for (const documentId of input.documentIds) {
-    const doc = await deps.documents.findDocumentForExport(
-      input.organizationId,
-      documentId,
-    );
-    if (doc === null) {
-      const exists = await deps.documents.documentExists(documentId);
-      if (exists) {
-        throw new ExportDocumentCrossOrgError();
-      }
-      throw new ExportDocumentNotFoundError();
-    }
-    if (doc.status !== "approved") {
-      throw new ExportDocumentNotApprovedError();
-    }
-  }
   return deps.transact(async () => {
+    // Revalidar el permiso dentro de la operación, además de la puerta HTTP.
+    if (!await deps.permissions.hasExportPermission(input.organizationId, input.actorUserId)) {
+      throw new ExportForbiddenError();
+    }
+    for (const documentId of input.documentIds) {
+      const doc = await deps.documents.findDocumentForExport(
+        input.organizationId,
+        documentId,
+      );
+      if (doc === null) {
+        const exists = await deps.documents.documentExists(documentId);
+        if (exists) {
+          throw new ExportDocumentCrossOrgError();
+        }
+        throw new ExportDocumentNotFoundError();
+      }
+      if (doc.status !== "approved") {
+        throw new ExportDocumentNotApprovedError();
+      }
+      if (!matchesSelection(doc, selectionFilters)) {
+        throw new ExportSelectionError("Un documento seleccionado no cumple los filtros de exportación.");
+      }
+    }
     const inserted = await deps.exports.insertExport({
       organizationId: input.organizationId,
       requestedBy: input.actorUserId,
       documentCount: input.documentIds.length,
+      format: "csv",
+      selectionFilters,
     });
     for (const documentId of input.documentIds) {
       await deps.exports.insertExportItem({
@@ -264,7 +283,15 @@ export async function createExport(
       action: "export.created",
       entityType: "export",
       entityId: inserted.id,
-      details: { document_count: input.documentIds.length },
+      details: {
+        document_count: input.documentIds.length,
+        format: "csv",
+        selection_filters: {
+          approvedFrom: selectionFilters.approvedFrom,
+          approvedTo: selectionFilters.approvedTo,
+          supplierFilterApplied: selectionFilters.supplier !== null,
+        },
+      },
     });
     return {
       exportId: inserted.id,

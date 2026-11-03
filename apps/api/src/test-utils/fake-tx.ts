@@ -6,11 +6,10 @@
  * §5.1-4/§5.1-5, donde la misma tabla debe responder distinto
  * según org y usuario).
  *
- * Soporte deliberadamente acotado: solo `eq` e `isNull`
- * combinados con `and` (lo que usan los adaptadores B2 y M-02).
- * condición lanza en vez de devolver filas silenciosamente
- * incorrectas. Los filtros que no son `eq`/`and` (vigentes sin
- * revocar, orden) los hacen los adaptadores en memoria.
+ * Los SELECT soportan comparaciones, AND/OR, ILIKE literal,
+ * JOIN, COUNT, orden y paginación que usa el listado F10b.
+ * Los UPDATE conservan eq/and/isNull. Una condición desconocida
+ * lanza en vez de devolver filas silenciosamente incorrectas.
  *
  * Las filas se guardan con las claves de campo de Drizzle
  * (`organizationId`, `userId`, …); las columnas (`organization_id`,
@@ -20,6 +19,8 @@
  * tests de rutas. Se excluye de `tsconfig.build.json` para que
  * no llegue a `dist`.
  */
+import { SQL, getTableName, type Table } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 
 export type FakeRow = Record<string, unknown>;
@@ -176,11 +177,7 @@ export interface FakeDbClient {
     };
   };
   select(fields: Record<string, unknown>): {
-    from(table: unknown): {
-      where(condition: unknown): {
-        limit(n: number): Promise<Array<Record<string, unknown>>>;
-      };
-    };
+    from(table: unknown): FakeSelect;
   };
   update(table: unknown): {
     set(values: Record<string, unknown>): {
@@ -249,25 +246,7 @@ export function createFakeDb(
       };
     },
     select(fields) {
-      return {
-        from(table) {
-          return {
-            where(condition) {
-              return {
-                limit: async (n) => {
-                  const pairs = parseEqPairs(condition);
-                  const matched = rowsOf(table).filter((row) =>
-                    matches(row, pairs),
-                  );
-                  return matched
-                    .slice(0, n)
-                    .map((row) => mapFields(fields, row));
-                },
-              };
-            },
-          };
-        },
-      };
+      return { from: (table) => fakeSelect(fields, table, rowsOf) };
     },
     update(table) {
       return {
@@ -310,4 +289,119 @@ export function createFakeDb(
       }
     },
   };
+}
+
+
+interface FakeSelect extends Promise<FakeRow[]> {
+  where(condition: unknown): FakeSelect;
+  leftJoin(table: unknown, condition: unknown): FakeSelect;
+  orderBy(...order: unknown[]): FakeSelect;
+  limit(n: number): FakeSelect;
+  offset(n: number): FakeSelect;
+}
+type Context = Record<string, FakeRow>;
+const dialect = new PgDialect();
+function tableName(table: unknown): string { return getTableName(table as Table); }
+
+/** Evaluate the SQL emitted by Drizzle for the supported read predicates.
+ * Unknown syntax fails rather than silently accepting a condition. */
+function sqlValue(expression: unknown, context: Context): unknown {
+  const { sql, params } = dialect.sqlToQuery(expression as SQL);
+  const tokens = sql.match(/"[^"\n]+"(?:\."[^"\n]+")?|\$\d+|'(?:''|[^'])*'|>=|<=|<>|[=<>(),]|[a-zA-Z_]+|\d+/g) ?? [];
+  let pos = 0;
+  const peek = () => tokens[pos]?.toLowerCase();
+  function atom(): unknown {
+    const token = tokens[pos++];
+    if (token === undefined) throw new Error("fake-tx: expresión incompleta");
+    if (token === "(") { const v = disjunction(); if (tokens[pos++] !== ")") throw new Error("fake-tx: paréntesis inválido"); return v; }
+    if (token.startsWith("$")) return params[Number(token.slice(1)) - 1];
+    if (token.startsWith("'")) return token.slice(1, -1).replaceAll("''", "'");
+    if (token.startsWith('"')) {
+      const parts = token.replaceAll('"', '').split('.');
+      return parts.length === 2 ? context[parts[0]]?.[toField(parts[1])] : Object.values(context)[0]?.[toField(parts[0])];
+    }
+    if (token.toLowerCase() === "null") return null;
+    if (token.toLowerCase() === "regexp_replace") {
+      if (tokens[pos++] !== "(") throw new Error("fake-tx: regexp_replace inválido");
+      const args: unknown[] = [atom()];
+      while (tokens[pos] === ',') { pos++; args.push(atom()); }
+      if (tokens[pos++] !== ")") throw new Error("fake-tx: regexp_replace inválido");
+      return args[0] == null ? null : String(args[0]).replace(new RegExp(String(args[1]), String(args[3])), String(args[2]));
+    }
+    throw new Error(`fake-tx: token no soportado ${token}`);
+  }
+  function comparison(): unknown {
+    const left = atom();
+    if (peek() === "collate") { pos++; if (tokens[pos++] !== '"und-x-icu"') throw new Error("fake-tx: collation no soportada"); }
+    const op = peek();
+    if (op === 'is') {pos++; if(peek() !== 'null') throw new Error('fake-tx: solo IS NULL');pos++;return left == null;}
+    if (!['=', '>=', '<=', '<', '>', '<>', 'ilike'].includes(op ?? '')) return left;
+    pos++; const right = atom();
+    if (left == null || right == null) return false;
+    if(op === 'ilike') {
+      let pattern='^'; const value=String(right);
+      for(let i=0;i<value.length;i++) {
+        const char=value[i];
+        if(char === '\\' && i+1<value.length) {pattern+=value[++i].replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+        else if(char === '%') pattern+='.*';
+        else if(char === '_') pattern+='.';
+        else pattern+=char.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      }
+      return new RegExp(pattern+'$','isu').test(String(left));
+    }
+    const scalar = (v: unknown): string | number => v instanceof Date ? v.getTime() : typeof v === "string" && /^\d{4}-\d\d-\d\dT/.test(v) ? Date.parse(v) : v as string | number;
+    const a = scalar(left), b = scalar(right);
+    if(op === '=') return a === b;
+    if(op === '<>') return a !== b;
+    if(op === '>=') return a >= b;
+    if(op === '<=') return a <= b;
+    if(op === '<') return a < b;
+    return a > b;
+  }
+  function conjunction(): unknown {let v=comparison();while(peek()==='and'){pos++;const right=comparison();v=Boolean(v)&&Boolean(right);}return v;}
+  function disjunction(): unknown {let v=conjunction();while(peek()==='or'){pos++;const right=conjunction();v=Boolean(v)||Boolean(right);}return v;}
+  const value=disjunction();if(pos!==tokens.length) throw new Error(`fake-tx: SQL no soportado ${sql}`);return value;
+}
+
+function fakeSelect(fields: Record<string, unknown>, table: unknown, rowsOf: (table: unknown) => FakeRow[]): FakeSelect {
+  let condition: unknown, joined: unknown, joinOn: unknown;
+  let limit=Infinity, offset=0, orders: unknown[]=[];
+  function run(): FakeRow[] {
+    const base=tableName(table);
+    let contexts: Context[]=rowsOf(table).map(row=>({[base]:row}));
+    if(joined) {
+      const name=tableName(joined);
+      contexts=contexts.flatMap(ctx=>{
+        const found=rowsOf(joined).map(row=>({...ctx,[name]:row})).filter(ctx=>sqlValue(joinOn,ctx));
+        return found.length ? found : [{...ctx,[name]:{}}];
+      });
+    }
+    if(condition) contexts=contexts.filter(ctx=>sqlValue(condition,ctx));
+    const fieldEntries=Object.entries(fields);
+    if(fieldEntries.length===1 && fieldEntries[0][1] instanceof SQL && /count\(\*\)/i.test(dialect.sqlToQuery(fieldEntries[0][1] as SQL).sql)) return [{[fieldEntries[0][0]]:contexts.length}];
+    contexts.sort((a,b)=>{
+      for(const order of orders) {
+        const q=dialect.sqlToQuery(order as SQL);const match=q.sql.match(/^(.+?)\s+(asc|desc)$/i);
+        if(!match) throw new Error('fake-tx: orden no soportado');
+        const field=match[1].replaceAll('"','').split('.');
+        const av=a[field[0]]?.[toField(field[1])],bv=b[field[0]]?.[toField(field[1])];
+        let diff=av==null ? (bv==null?0:1) : bv==null ? -1 : av<bv ? -1 : av>bv ? 1 : 0;
+        if(match[2].toLowerCase()==='desc' && av!=null && bv!=null)diff=-diff;
+        if(diff)return diff;
+      }
+      return 0;
+    });
+    return contexts.slice(offset,offset+limit).map(ctx=>Object.fromEntries(fieldEntries.map(([alias,col])=>{
+      const column=col as {table:unknown;name:string};
+      return [alias,ctx[tableName(column.table)]?.[toField(column.name)]];
+    })));
+  }
+  const query={
+    where(c:unknown){condition=c;return query;},
+    leftJoin(t:unknown,c:unknown){joined=t;joinOn=c;return query;},
+    orderBy(...o:unknown[]){orders=o;return query;},
+    limit(n:number){limit=n;return query;},offset(n:number){offset=n;return query;},
+    then(resolve: (v:FakeRow[])=>unknown,reject?: (e:unknown)=>unknown){return Promise.resolve().then(run).then(resolve,reject);},
+  } as unknown as FakeSelect;
+  return query;
 }
