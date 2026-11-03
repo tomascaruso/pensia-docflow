@@ -19,7 +19,7 @@
  * tests de rutas. Se excluye de `tsconfig.build.json` para que
  * no llegue a `dist`.
  */
-import { SQL, getTableName, type Table } from "drizzle-orm";
+import { SQL, Column, getTableColumns, getTableName, is, type Table } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 
@@ -300,108 +300,218 @@ interface FakeSelect extends Promise<FakeRow[]> {
   offset(n: number): FakeSelect;
 }
 type Context = Record<string, FakeRow>;
+type Value = (context: Context) => unknown;
+type Predicate = (context: Context) => boolean;
 const dialect = new PgDialect();
 function tableName(table: unknown): string { return getTableName(table as Table); }
 
-/** Evaluate the SQL emitted by Drizzle for the supported read predicates.
- * Unknown syntax fails rather than silently accepting a condition. */
-function sqlValue(expression: unknown, context: Context): unknown {
-  const { sql, params } = dialect.sqlToQuery(expression as SQL);
-  const tokens = sql.match(/"[^"\n]+"(?:\."[^"\n]+")?|\$\d+|'(?:''|[^'])*'|>=|<=|<>|[=<>(),]|[a-zA-Z_]+|\d+/g) ?? [];
+/** Subconjunto explícito para tests: columnas, parámetros, comparaciones,
+ * AND/OR, IS NULL, ILIKE, regexp_replace de CUIT y cast timestamptz.
+ * Se compila/valida toda la consulta antes de mirar filas, incluso con cero filas.
+ * ILIKE es una aproximación de fixtures; NO demuestra equivalencia Unicode/ICU.
+ * Esa paridad se verifica exclusivamente contra PostgreSQL real en B6. */
+function columnValue(token: string, tables: unknown[]): Value {
+  const parts = token.replaceAll('"', '').split('.');
+  const table = parts.length === 2 ? tables.find(t => tableName(t) === parts[0]) : tables[0];
+  const name = parts.at(-1);
+  if (!table || !Object.values(getTableColumns(table as Table)).some(c => c.name === name)) {
+    throw new Error(`fake-tx: columna no soportada ${token}`);
+  }
+  return context => context[tableName(table)]?.[toField(name!)];
+}
+
+function timestamp(value: unknown): number {
+  const text = String(value).replace(/^(\d{5})-/, "+0$1-");
+  const time = Date.parse(text);
+  if (!Number.isFinite(time)) throw new Error("fake-tx: timestamptz inválido");
+  return time;
+}
+
+function comparable(value: unknown): string | number | boolean {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string" && /^\d{4,5}-\d\d-\d\dT/.test(value)) return timestamp(value);
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  throw new Error("fake-tx: valor no comparable");
+}
+
+function likePattern(value: unknown): RegExp {
+  if (typeof value !== "string") throw new Error("fake-tx: ILIKE requiere patrón constante de texto");
+  let pattern = "^";
+  const literal = (c: string) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if (char === "\\") {
+      if (++i === value.length) throw new Error("fake-tx: escape ILIKE incompleto");
+      pattern += literal(value[i]);
+    } else if (char === "%") pattern += ".*";
+    else if (char === "_") pattern += ".";
+    else pattern += literal(char);
+  }
+  return new RegExp(pattern + "$", "isu");
+}
+
+function compilePredicate(expression: unknown, tables: unknown[]): Predicate {
+  const { sql: text, params } = dialect.sqlToQuery(expression as SQL);
+  const tokens: string[] = [];
+  // Sticky: ningún carácter desconocido se salta ni se reinterpreta.
+  const lexer = /"[^"\n]+"(?:\."[^"\n]+")?|\$\d+|'(?:''|[^'])*'|::|>=|<=|<>|[=<>(),]|[a-zA-Z_]+|\d+/y;
+  let offset = 0;
+  while (offset < text.length) {
+    if (/\s/.test(text[offset])) { offset++; continue; }
+    lexer.lastIndex = offset;
+    const match = lexer.exec(text);
+    if (!match) throw new Error(`fake-tx: carácter no soportado en ${text.slice(offset)}`);
+    tokens.push(match[0]);
+    offset = lexer.lastIndex;
+  }
   let pos = 0;
   const peek = () => tokens[pos]?.toLowerCase();
-  function atom(): unknown {
+  function take(expected: string) {
+    const actual = expected.startsWith("'") ? tokens[pos] : peek();
+    if (actual !== expected) throw new Error(`fake-tx: se esperaba ${expected}`);
+    pos++;
+  }
+  function scalar(): { read: Value; constant: boolean } {
     const token = tokens[pos++];
-    if (token === undefined) throw new Error("fake-tx: expresión incompleta");
-    if (token === "(") { const v = disjunction(); if (tokens[pos++] !== ")") throw new Error("fake-tx: paréntesis inválido"); return v; }
-    if (token.startsWith("$")) return params[Number(token.slice(1)) - 1];
-    if (token.startsWith("'")) return token.slice(1, -1).replaceAll("''", "'");
-    if (token.startsWith('"')) {
-      const parts = token.replaceAll('"', '').split('.');
-      return parts.length === 2 ? context[parts[0]]?.[toField(parts[1])] : Object.values(context)[0]?.[toField(parts[0])];
+    if (!token) throw new Error("fake-tx: expresión incompleta");
+    let read: Value;
+    let constant = true;
+    if (token.startsWith("$")) {
+      const index = Number(token.slice(1)) - 1;
+      if (index < 0 || index >= params.length) throw new Error("fake-tx: parámetro inválido");
+      read = () => params[index];
+    } else if (token.startsWith("'")) read = () => token.slice(1, -1).replaceAll("''", "'");
+    else if (token.startsWith('"')) { read = columnValue(token, tables); constant = false; }
+    else if (token.toLowerCase() === "null") read = () => null;
+    else if (token.toLowerCase() === "regexp_replace") {
+      take("("); const source = scalar();
+      // Únicamente la normalización de CUIT utilizada por el listado.
+      for (const argument of ["'[^0-9]'", "''", "'g'"]) { take(","); take(argument); }
+      take(")");
+      read = context => source.read(context) == null ? null : String(source.read(context)).replace(/[^0-9]/g, "");
+      constant = source.constant;
+    } else throw new Error(`fake-tx: token no soportado ${token}`);
+    if (peek() === "collate") {
+      pos++;
+      if (tokens[pos++] !== '"und-x-icu"') throw new Error("fake-tx: collation no soportada");
     }
-    if (token.toLowerCase() === "null") return null;
-    if (token.toLowerCase() === "regexp_replace") {
-      if (tokens[pos++] !== "(") throw new Error("fake-tx: regexp_replace inválido");
-      const args: unknown[] = [atom()];
-      while (tokens[pos] === ',') { pos++; args.push(atom()); }
-      if (tokens[pos++] !== ")") throw new Error("fake-tx: regexp_replace inválido");
-      return args[0] == null ? null : String(args[0]).replace(new RegExp(String(args[1]), String(args[3])), String(args[2]));
+    if (peek() === "::") {
+      pos++; take("timestamptz");
+      if (!constant) throw new Error("fake-tx: cast solo de parámetro constante");
+      const time = timestamp(read({}));
+      read = () => time;
     }
-    throw new Error(`fake-tx: token no soportado ${token}`);
+    return { read, constant };
   }
-  function comparison(): unknown {
-    const left = atom();
-    if (peek() === "collate") { pos++; if (tokens[pos++] !== '"und-x-icu"') throw new Error("fake-tx: collation no soportada"); }
+  function comparison(): Predicate {
+    if (peek() === "(") { pos++; const result = disjunction(); take(")"); return result; }
+    const left = scalar();
     const op = peek();
-    if (op === 'is') {pos++; if(peek() !== 'null') throw new Error('fake-tx: solo IS NULL');pos++;return left == null;}
-    if (!['=', '>=', '<=', '<', '>', '<>', 'ilike'].includes(op ?? '')) return left;
-    pos++; const right = atom();
-    if (left == null || right == null) return false;
-    if(op === 'ilike') {
-      let pattern='^'; const value=String(right);
-      for(let i=0;i<value.length;i++) {
-        const char=value[i];
-        if(char === '\\' && i+1<value.length) {pattern+=value[++i].replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-        else if(char === '%') pattern+='.*';
-        else if(char === '_') pattern+='.';
-        else pattern+=char.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-      }
-      return new RegExp(pattern+'$','isu').test(String(left));
+    if (op === "is") { pos++; take("null"); return context => left.read(context) == null; }
+    if (!["=", ">=", "<=", "<", ">", "<>", "ilike"].includes(op ?? "")) {
+      throw new Error("fake-tx: comparación no soportada");
     }
-    const scalar = (v: unknown): string | number => v instanceof Date ? v.getTime() : typeof v === "string" && /^\d{4}-\d\d-\d\dT/.test(v) ? Date.parse(v) : v as string | number;
-    const a = scalar(left), b = scalar(right);
-    if(op === '=') return a === b;
-    if(op === '<>') return a !== b;
-    if(op === '>=') return a >= b;
-    if(op === '<=') return a <= b;
-    if(op === '<') return a < b;
-    return a > b;
+    pos++;
+    const right = scalar();
+    if (op === "ilike") {
+      if (!right.constant) throw new Error("fake-tx: ILIKE requiere patrón constante");
+      const pattern = likePattern(right.read({}));
+      return context => left.read(context) != null && pattern.test(String(left.read(context)));
+    }
+    return context => {
+      const l = left.read(context), r = right.read(context);
+      if (l == null || r == null) return false;
+      const a = comparable(l), b = comparable(r);
+      switch (op) {
+        case "=": return a === b;
+        case "<>": return a !== b;
+        case ">=": return a >= b;
+        case "<=": return a <= b;
+        case "<": return a < b;
+        default: return a > b;
+      }
+    };
   }
-  function conjunction(): unknown {let v=comparison();while(peek()==='and'){pos++;const right=comparison();v=Boolean(v)&&Boolean(right);}return v;}
-  function disjunction(): unknown {let v=conjunction();while(peek()==='or'){pos++;const right=conjunction();v=Boolean(v)||Boolean(right);}return v;}
-  const value=disjunction();if(pos!==tokens.length) throw new Error(`fake-tx: SQL no soportado ${sql}`);return value;
+  function conjunction(): Predicate {
+    let result = comparison();
+    while (peek() === "and") { pos++; const left = result, right = comparison(); result = context => left(context) && right(context); }
+    return result;
+  }
+  function disjunction(): Predicate {
+    let result = conjunction();
+    while (peek() === "or") { pos++; const left = result, right = conjunction(); result = context => left(context) || right(context); }
+    return result;
+  }
+  const predicate = disjunction();
+  if (pos !== tokens.length) throw new Error(`fake-tx: SQL no soportado ${text}`);
+  return predicate;
 }
 
 function fakeSelect(fields: Record<string, unknown>, table: unknown, rowsOf: (table: unknown) => FakeRow[]): FakeSelect {
   let condition: unknown, joined: unknown, joinOn: unknown;
-  let limit=Infinity, offset=0, orders: unknown[]=[];
+  let limit = Infinity, offset = 0, orders: unknown[] = [];
   function run(): FakeRow[] {
-    const base=tableName(table);
-    let contexts: Context[]=rowsOf(table).map(row=>({[base]:row}));
-    if(joined) {
-      const name=tableName(joined);
-      contexts=contexts.flatMap(ctx=>{
-        const found=rowsOf(joined).map(row=>({...ctx,[name]:row})).filter(ctx=>sqlValue(joinOn,ctx));
-        return found.length ? found : [{...ctx,[name]:{}}];
+    const tables = joined ? [table, joined] : [table];
+    // Todas las expresiones se validan antes de leer/evaluar filas.
+    const predicate = condition === undefined ? () => true : compilePredicate(condition, tables);
+    const joinPredicate = joined ? compilePredicate(joinOn, tables) : undefined;
+    const entries = Object.entries(fields);
+    if (!entries.length) throw new Error("fake-tx: proyección vacía");
+    const countOnly = entries.length === 1 && entries[0][1] instanceof SQL &&
+      /^count\(\*\)$/i.test(dialect.sqlToQuery(entries[0][1]).sql.trim());
+    const projections = countOnly ? [] : entries.map(([alias, column]) => {
+      if (!is(column, Column) || !tables.includes(column.table)) throw new Error("fake-tx: proyección no soportada");
+      return { alias, read: columnValue(`"${tableName(column.table)}"."${column.name}"`, tables) };
+    });
+    const sorting = orders.map(order => {
+      const text = dialect.sqlToQuery(order as SQL).sql;
+      const match = text.match(/^("[^"\n]+"(?:\."[^"\n]+")?) (asc|desc)$/i);
+      if (!match) throw new Error("fake-tx: orden no soportado");
+      return { read: columnValue(match[1], tables), desc: match[2].toLowerCase() === "desc" };
+    });
+    const base = tableName(table);
+    let contexts: Context[] = rowsOf(table).map(row => ({ [base]: row }));
+    if (joined && joinPredicate) {
+      const name = tableName(joined);
+      const joinedRows = rowsOf(joined);
+      contexts = contexts.flatMap(context => {
+        const found = joinedRows.map(row => ({ ...context, [name]: row })).filter(joinPredicate);
+        return found.length ? found : [{ ...context, [name]: {} }];
       });
     }
-    if(condition) contexts=contexts.filter(ctx=>sqlValue(condition,ctx));
-    const fieldEntries=Object.entries(fields);
-    if(fieldEntries.length===1 && fieldEntries[0][1] instanceof SQL && /count\(\*\)/i.test(dialect.sqlToQuery(fieldEntries[0][1] as SQL).sql)) return [{[fieldEntries[0][0]]:contexts.length}];
-    contexts.sort((a,b)=>{
-      for(const order of orders) {
-        const q=dialect.sqlToQuery(order as SQL);const match=q.sql.match(/^(.+?)\s+(asc|desc)$/i);
-        if(!match) throw new Error('fake-tx: orden no soportado');
-        const field=match[1].replaceAll('"','').split('.');
-        const av=a[field[0]]?.[toField(field[1])],bv=b[field[0]]?.[toField(field[1])];
-        let diff=av==null ? (bv==null?0:1) : bv==null ? -1 : av<bv ? -1 : av>bv ? 1 : 0;
-        if(match[2].toLowerCase()==='desc' && av!=null && bv!=null)diff=-diff;
-        if(diff)return diff;
+    contexts = contexts.filter(predicate);
+    if (countOnly) return [{ [entries[0][0]]: contexts.length }];
+    contexts.sort((a, b) => {
+      for (const order of sorting) {
+        const av = order.read(a), bv = order.read(b);
+        const direction = order.desc ? -1 : 1;
+        const difference = av == null ? (bv == null ? 0 : direction) : bv == null ? -direction :
+          comparable(av) < comparable(bv) ? -direction : comparable(av) > comparable(bv) ? direction : 0;
+        if (difference) return difference;
       }
       return 0;
     });
-    return contexts.slice(offset,offset+limit).map(ctx=>Object.fromEntries(fieldEntries.map(([alias,col])=>{
-      const column=col as {table:unknown;name:string};
-      return [alias,ctx[tableName(column.table)]?.[toField(column.name)]];
-    })));
+    return contexts.slice(offset, offset + limit).map(context =>
+      Object.fromEntries(projections.map(({ alias, read }) => [alias, read(context)])));
   }
-  const query={
-    where(c:unknown){condition=c;return query;},
-    leftJoin(t:unknown,c:unknown){joined=t;joinOn=c;return query;},
-    orderBy(...o:unknown[]){orders=o;return query;},
-    limit(n:number){limit=n;return query;},offset(n:number){offset=n;return query;},
-    then(resolve: (v:FakeRow[])=>unknown,reject?: (e:unknown)=>unknown){return Promise.resolve().then(run).then(resolve,reject);},
+  const query = {
+    where(value: unknown) { condition = value; return query; },
+    leftJoin(value: unknown, on: unknown) {
+      if (joined) throw new Error("fake-tx: solo se admite un LEFT JOIN");
+      joined = value; joinOn = on; return query;
+    },
+    orderBy(...value: unknown[]) { orders = value; return query; },
+    limit(value: number) {
+      if (!Number.isInteger(value) || value < 0) throw new Error("fake-tx: límite inválido");
+      limit = value; return query;
+    },
+    offset(value: number) {
+      if (!Number.isInteger(value) || value < 0) throw new Error("fake-tx: offset inválido");
+      offset = value; return query;
+    },
+    then(resolve: (value: FakeRow[]) => unknown, reject?: (error: unknown) => unknown) {
+      return Promise.resolve().then(run).then(resolve, reject);
+    },
   } as unknown as FakeSelect;
   return query;
 }

@@ -36,6 +36,7 @@ function makeFakeClient(options?: {
   const client: ExportDrizzleClient = {
     select: () => ({
       from: (table: unknown) => ({
+        leftJoin: () => ({ where: () => whereChain(options?.documents ?? []) }),
         where: () =>
           whereChain(
             table === schema.documents

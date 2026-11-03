@@ -1,4 +1,6 @@
 import type { ExportSelectionFilters } from "@pensia-docflow/shared";
+import { and, eq, gte, ilike, lt, sql, type SQL } from "drizzle-orm";
+import * as schema from "../db/schema.js";
 
 export class ExportSelectionError extends Error {
   constructor(message: string) { super(message); this.name = "ExportSelectionError"; }
@@ -27,18 +29,36 @@ export function normalizeSelection(input: { approvedFrom?: unknown; approvedTo?:
 
 /** Días en UTC−03 fijo; extremo superior excluido. */
 export function approvalBounds(filters: ExportSelectionFilters) {
+  // PostgreSQL acepta 10000-..., pero no el +010000-... emitido por Date.
+  // Se envía como texto con cast timestamptz, sin el encoder Date de Drizzle.
+  const timestamp = (time: number) => new Date(time).toISOString().replace(/^\+0/, "");
   return {
-    from: filters.approvedFrom ? new Date(`${filters.approvedFrom}T03:00:00Z`) : null,
-    until: filters.approvedTo ? new Date(Date.parse(`${filters.approvedTo}T03:00:00Z`) + 86400000) : null,
+    from: filters.approvedFrom ? timestamp(Date.parse(`${filters.approvedFrom}T03:00:00Z`)) : null,
+    until: filters.approvedTo ? timestamp(Date.parse(`${filters.approvedTo}T03:00:00Z`) + 86400000) : null,
   };
 }
 
-export function matchesSelection(doc: { supplierName?: string | null; approvedAt?: Date | null }, filters: ExportSelectionFilters): boolean {
-  if (filters.supplier && !doc.supplierName?.toLowerCase().includes(filters.supplier.toLowerCase())) return false;
+export const approvedDecisionJoin = and(
+  eq(schema.documentDecisions.documentId, schema.documents.id),
+  eq(schema.documentDecisions.decision, "approved"),
+);
+
+/** Única autoridad de coincidencia: PostgreSQL, tanto al listar como dentro de tx. */
+export function selectionPredicate(
+  organizationId: string,
+  filters: ExportSelectionFilters,
+  scope: { documentId?: string; status?: string } = {},
+): SQL {
+  const clauses = [eq(schema.documents.organizationId, organizationId)];
+  if (scope.documentId) clauses.push(eq(schema.documents.id, scope.documentId));
+  if (scope.status) clauses.push(eq(schema.documents.status, scope.status));
+  if (filters.supplier) {
+    clauses.push(ilike(sql`${schema.documents.supplierName} collate "und-x-icu"`, `%${escapeLike(filters.supplier)}%`));
+  }
   const { from, until } = approvalBounds(filters);
-  if ((from || until) && !doc.approvedAt) return false;
-  const approvedAt = doc.approvedAt;
-  return (!from || (approvedAt !== null && approvedAt !== undefined && approvedAt >= from)) && (!until || (approvedAt !== null && approvedAt !== undefined && approvedAt < until));
+  if (from) clauses.push(gte(schema.documentDecisions.decidedAt, sql`${from}::timestamptz`));
+  if (until) clauses.push(lt(schema.documentDecisions.decidedAt, sql`${until}::timestamptz`));
+  return and(...clauses)!;
 }
 
 export function escapeLike(term: string): string { return term.replace(/[\\%_]/g, "\\$&"); }

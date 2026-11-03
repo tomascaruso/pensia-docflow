@@ -35,7 +35,7 @@
  * `export-drizzle.ts`.
  */
 
-import { normalizeSelection, matchesSelection, ExportSelectionError } from "../services/export-selection.js";
+import { normalizeSelection, ExportSelectionError } from "../services/export-selection.js";
 import { EXPORT_SELECTION_MAX } from "@pensia-docflow/shared";
 import type { ExportSelectionFilters } from "@pensia-docflow/shared";
 import type { AuditEventInput } from "./audit-writer.js";
@@ -127,10 +127,13 @@ export interface ExportDocumentPorts {
    * Documento solo si pertenece a la organización (filtro en la
    * consulta); null si no existe o es de otra org. Para
    * distinguir ambos casos, usar `documentExists`.
+   * Con selection, exige además approved y el predicado SQL compartido;
+   * null también significa que el documento no cumple los criterios.
    */
   findDocumentForExport(
     organizationId: string,
     documentId: string,
+    selection?: ExportSelectionFilters,
   ): Promise<ExportDocumentRecord | null>;
   documentExists(documentId: string): Promise<boolean>;
 }
@@ -261,7 +264,8 @@ export async function createExport(
       if (doc.status !== "approved") {
         throw new ExportDocumentNotApprovedError();
       }
-      if (!matchesSelection(doc, selectionFilters)) {
+      // Segunda consulta calificada sobre tx: mismo predicado SQL que GET.
+      if (!await deps.documents.findDocumentForExport(input.organizationId, documentId, selectionFilters)) {
         throw new ExportSelectionError("Un documento seleccionado no cumple los filtros de exportación.");
       }
     }

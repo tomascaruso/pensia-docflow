@@ -24,8 +24,9 @@ import {
   type PermissionDrizzleClient,
 } from "./permission-drizzle.js";
 import { hasEffectivePermission } from "./permission-service.js";
+import { approvedDecisionJoin, selectionPredicate } from "../services/export-selection.js";
 import type {
-  ExportDocumentRecord,
+  ExportDocumentPorts,
   ExportItemRecord,
   ExportRecord,
   ExportServiceDeps,
@@ -34,6 +35,11 @@ import type {
 export interface ExportDrizzleClient {
   select(fields: Record<string, unknown>): {
     from(table: unknown): {
+      leftJoin(table: unknown, condition: unknown): {
+        where(condition: unknown): Promise<Array<Record<string, unknown>>> & {
+          limit(n: number): Promise<Array<Record<string, unknown>>>;
+        };
+      };
       where(condition: unknown): Promise<Array<Record<string, unknown>>> & {
         limit(n: number): Promise<Array<Record<string, unknown>>>;
       };
@@ -58,25 +64,21 @@ function asNumberOrNull(value: unknown): number | null {
 
 export function createDrizzleExportDocuments(
   db: ExportDrizzleClient,
-): {
-  findDocumentForExport(
-    organizationId: string,
-    documentId: string,
-  ): Promise<ExportDocumentRecord | null>;
-  documentExists(documentId: string): Promise<boolean>;
-} {
+): ExportDocumentPorts {
   return {
-    async findDocumentForExport(organizationId, documentId) {
+    async findDocumentForExport(organizationId, documentId, selection) {
       const rows = await db
         .select({
           id: schema.documents.id,
           organizationId: schema.documents.organizationId,
           status: schema.documents.status,
           supplierName: schema.documents.supplierName,
+          approvedAt: schema.documentDecisions.decidedAt,
         })
         .from(schema.documents)
+        .leftJoin(schema.documentDecisions, approvedDecisionJoin)
         .where(
-          and(
+          selection ? selectionPredicate(organizationId, selection, { documentId, status: "approved" }) : and(
             eq(schema.documents.id, documentId),
             eq(schema.documents.organizationId, organizationId),
           ),
@@ -90,14 +92,10 @@ export function createDrizzleExportDocuments(
       if (id === null || org === null || status === null) {
         return null;
       }
-      const decisions = await db.select({ decidedAt: schema.documentDecisions.decidedAt })
-        .from(schema.documentDecisions)
-        .where(and(eq(schema.documentDecisions.documentId, documentId), eq(schema.documentDecisions.decision, "approved")))
-        .limit(1);
       return {
         id, organizationId: org, status,
         supplierName: asStringOrNull(row?.["supplierName"]),
-        approvedAt: decisions[0]?.["decidedAt"] instanceof Date ? decisions[0]["decidedAt"] : null,
+        approvedAt: row?.["approvedAt"] instanceof Date ? row["approvedAt"] : null,
       };
     },
     async documentExists(documentId) {

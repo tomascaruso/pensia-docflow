@@ -390,6 +390,64 @@ describe.skipIf(!process.env.DOCFLOW_B6_TEST)(
       await rm(storageDir, { recursive: true, force: true });
     });
 
+    it.each([
+      { label: "Unicode reciente", supplier: "꟎", term: "꟏" },
+      { label: "sigma", supplier: "ΟΣ", term: "Σ" },
+      { label: "I con punto", supplier: "İstanbul", term: "i" },
+      { label: "mayúsculas", supplier: "Dirección Sur", term: "DIRECCIÓN SUR" },
+      { label: "% literal presente", supplier: "Proveedor % Norte", term: "%", literal: true },
+      { label: "% literal ausente", supplier: "Proveedor XYZ Norte", term: "%", literal: false },
+      { label: "_ literal presente", supplier: "Proveedor _ Norte", term: "_", literal: true },
+      { label: "_ literal ausente", supplier: "Proveedor XYZ Norte", term: "_", literal: false },
+      { label: "barra literal presente", supplier: "Proveedor \\ Norte", term: "\\", literal: true },
+      { label: "barra literal ausente", supplier: "Proveedor XYZ Norte", term: "\\", literal: false },
+    ])("F10b correcciones: paridad GET/POST $label", async ({ supplier, term, ...scenario }) => {
+      const orgId = await createOrg("F10b selección");
+      const [doc] = await rawDb.insert(schema.documents).values({
+        organizationId: orgId, fileName: "paridad.pdf", fileHash: "f".repeat(64),
+        mimeType: "application/pdf", sizeBytes: 100, status: "approved", supplierName: supplier,
+      }).returning({ id: schema.documents.id });
+      expect(doc).toBeDefined();
+      const list = await app.inject({ method: "GET", url: `/organizations/${orgId}/documents?${new URLSearchParams({ supplier: term })}`, headers: { cookie: adminCookie } });
+      expect(list.statusCode).toBe(200);
+      const matches = list.json().documents.some((row: { id: string }) => row.id === doc!.id);
+      expect(list.json().total).toBe(matches ? 1 : 0);
+      // El resultado Unicode lo determina el PostgreSQL instalado, no una versión fijada de ICU.
+      if ("literal" in scenario) expect(matches).toBe(scenario.literal);
+      const created = await postExport(adminCookie, orgId, { documentIds: [doc!.id], supplier: term });
+      expect(created.statusCode, JSON.stringify({ supplier, term, matches })).toBe(matches ? 201 : 400);
+      expect(await rawDb.select().from(schema.exports).where(eq(schema.exports.organizationId, orgId))).toHaveLength(matches ? 1 : 0);
+    });
+
+    it("F10b correcciones: día completo 9999-12-31 en listado y creación", async () => {
+      const orgId = await createOrg("F10b selección");
+      const userId = await userIdByEmail(ADMIN_EMAIL);
+      const times = [
+        "9999-12-31 02:59:59.999+00", "9999-12-31 03:00:00+00",
+        "10000-01-01 02:59:59.999+00", "10000-01-01 03:00:00+00",
+      ];
+      const ids: string[] = [];
+      for (const [index, time] of times.entries()) {
+        const [doc] = await rawDb.insert(schema.documents).values({
+          organizationId: orgId, fileName: `extremo-${index}.pdf`, fileHash: String(index).padStart(64, "f"),
+          mimeType: "application/pdf", sizeBytes: 100, status: "approved",
+        }).returning({ id: schema.documents.id });
+        ids.push(doc!.id);
+        await rawDb.execute(sql`INSERT INTO document_decisions (document_id,decided_by,decision,decided_at) VALUES (${doc!.id}::uuid,${userId},'approved',${time}::timestamptz)`);
+      }
+      const filters = { approvedFrom: "9999-12-31", approvedTo: "9999-12-31" };
+      const list = await app.inject({ method: "GET", url: `/organizations/${orgId}/documents?${new URLSearchParams(filters)}`, headers: { cookie: adminCookie } });
+      expect(list.statusCode).toBe(200);
+      expect(list.json().total).toBe(2);
+      expect(list.json().documents.map((doc: { id: string }) => doc.id).sort()).toEqual(ids.slice(1, 3).sort());
+      expect((await postExport(adminCookie, orgId, { documentIds: ids.slice(1, 3), ...filters })).statusCode).toBe(201);
+      for (const id of [ids[0], ids[3]]) {
+        expect((await postExport(adminCookie, orgId, { documentIds: [ids[1], id], ...filters })).statusCode).toBe(400);
+      }
+      expect((await postExport(adminCookie, orgId, { documentIds: ids.slice(0, 3), approvedTo: filters.approvedTo })).statusCode).toBe(201);
+      expect(await rawDb.select().from(schema.exports).where(eq(schema.exports.organizationId, orgId))).toHaveLength(2);
+    });
+
     it("F10b: filtros SQL completos, UTC−03, persistencia, auditoría segura y rollback real", async () => {
       const orgId = await createOrg("F10b selección");
       const userId = await userIdByEmail(ADMIN_EMAIL);

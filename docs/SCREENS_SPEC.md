@@ -361,7 +361,8 @@ así que ningún documento aprobado deja de estarlo por el flujo
 normal; la verificación repetida en el momento de exportar es un
 control defensivo y, si por cualquier motivo un documento
 seleccionado no estuviera en `approved` en ese momento, se
-excluye y se informa en el detalle. No se inventa ninguna
+rechaza la operación completa, sin exportación ni ítems parciales.
+No se inventa ninguna
 transición de salida de `approved`.
 
 **Estados:** en preparación → indicador de progreso sin porcentaje
@@ -382,8 +383,32 @@ Admiten un solo extremo. Fechas inexistentes o rango invertido se rechazan con 4
 Sin decisión aprobada un documento no coincide con un rango activo.
 Proveedor es coincidencia parcial literal e insensible a mayúsculas sobre
 supplierName; `%`, `_` y la barra inversa no son comodines del término. Criterios AND.
-La consulta usa la colación ICU `und-x-icu` para comparación Unicode incluso si la
-base tiene locale C; debe existir en PostgreSQL. La instalación de pruebas la tiene.
+Listado y revalidación usan el mismo predicado PostgreSQL sobre la decisión
+aprobada. Al crear se ejecuta sobre la conexión transaccional e incluye organización,
+ID, estado, fechas y proveedor. JavaScript no decide la coincidencia de proveedor.
+La fecha máxima `9999-12-31` incluye el día completo: su extremo excluido se envía
+como `10000-01-01T03:00:00.000Z`, texto válido para timestamptz de PostgreSQL.
+
+**Requisito para instalaciones futuras:** PostgreSQL debe disponer de la colación
+ICU determinista `pg_catalog."und-x-icu"`, incluso si la base tiene locale C.
+Antes de habilitar F10b, ejecutar en la base de destino:
+
+```sql
+SELECT n.nspname, c.collname, c.collprovider, c.collisdeterministic,
+       c.collversion, pg_collation_actual_version(c.oid) AS actual_version
+FROM pg_collation c
+JOIN pg_namespace n ON n.oid = c.collnamespace
+WHERE n.nspname = 'pg_catalog' AND c.collname = 'und-x-icu';
+```
+
+Debe devolver una fila, proveedor `i`, determinista `true`, y versiones registrada
+y actual coincidentes. Si no existe o la instalación informa incompatibilidad de
+versiones, detener la habilitación y revisar la instalación PostgreSQL/ICU.
+La migración no crea ni cambia colaciones, y el arranque no hace esta comprobación
+automáticamente. Sin la colación, una consulta de proveedor/búsqueda falla con
+SQLSTATE 42704 y la API responde 500. La versión de ICU puede cambiar qué pares
+Unicode coinciden: las regresiones exigen paridad GET/POST, no un resultado Unicode
+universal fijado a una versión concreta. La instalación de pruebas fue verificada.
 
 GET de documentos aplica estos filtros, conteo, orden estable y paginación en SQL,
 sin recorte silencioso de 10.000 filas. Los filtros y la página forman parte de la

@@ -1,7 +1,7 @@
 /** Lecturas multi-tenant. Documentos: filtros, conteo y paginación SQL;
  * las otras lecturas conservan su implementación previa. */
-import { and, eq, count, asc, desc, gte, lt, ilike, or, sql } from "drizzle-orm";
-import { normalizeSelection, approvalBounds, escapeLike } from "../services/export-selection.js";
+import { and, eq, count, asc, desc, ilike, or, sql } from "drizzle-orm";
+import { normalizeSelection, selectionPredicate, approvedDecisionJoin, escapeLike } from "../services/export-selection.js";
 import * as schema from "./schema.js";
 import type {
   AuditEvent,
@@ -249,12 +249,7 @@ export async function listDocumentsOfOrg(
   query: ListDocumentsQuery,
 ): Promise<{ rows: DocumentRow[]; total: number }> {
   const filters = normalizeSelection(query);
-  const { from, until } = approvalBounds(filters);
-  const clauses = [eq(schema.documents.organizationId, organizationId)];
-  if (query.status) clauses.push(eq(schema.documents.status, query.status));
-  if (filters.supplier) clauses.push(ilike(sql`${schema.documents.supplierName} collate "und-x-icu"`, `%${escapeLike(filters.supplier)}%`));
-  if (from) clauses.push(gte(schema.documentDecisions.decidedAt, from));
-  if (until) clauses.push(lt(schema.documentDecisions.decidedAt, until));
+  const clauses = [selectionPredicate(organizationId, filters, { status: query.status })];
   if (query.search) {
     const term = `%${escapeLike(query.search)}%`;
     const cuit = /^\d{11}$/.test(query.search) || /^\d{2}-\d{8}-\d$/.test(query.search);
@@ -262,7 +257,7 @@ export async function listDocumentsOfOrg(
       cuit ? eq(sql`regexp_replace(${schema.documents.supplierTaxId}, '[^0-9]', '', 'g')`, digitsOnly(query.search)) : undefined)!);
   }
   const condition = and(...clauses);
-  const join = and(eq(schema.documentDecisions.documentId, schema.documents.id), eq(schema.documentDecisions.decision, "approved"));
+  const join = approvedDecisionJoin;
   const totals = await client.select({ total: count() }).from(schema.documents).leftJoin(schema.documentDecisions, join).where(condition);
   const rows = await client.select(DOCUMENT_FIELDS).from(schema.documents).leftJoin(schema.documentDecisions, join).where(condition)
     .orderBy(query.order === "asc" ? asc(schema.documents.createdAt) : desc(schema.documents.createdAt), asc(schema.documents.id))
