@@ -1,6 +1,7 @@
+import { alias } from "drizzle-orm/pg-core";
 /** Lecturas multi-tenant. Documentos: filtros, conteo y paginación SQL;
  * las otras lecturas conservan su implementación previa. */
-import { and, eq, count, asc, desc, ilike, or, sql } from "drizzle-orm";
+import { and, eq, ne, count, asc, desc, ilike, or, sql } from "drizzle-orm";
 import { normalizeSelection, selectionPredicate, approvedDecisionJoin, escapeLike } from "../services/export-selection.js";
 import * as schema from "./schema.js";
 import type {
@@ -37,11 +38,15 @@ interface ListSelect extends Promise<Array<Record<string, unknown>>> {
   orderBy(...columns: unknown[]): { limit(n: number): LimitedSelect };
   limit(n: number): LimitedSelect;
 }
+interface JoinedRead {
+  where(condition: unknown): ListSelect;
+  leftJoin(table: unknown, condition: unknown): { where(condition: unknown): ListSelect };
+}
 export interface ReadDrizzleClient {
   select(fields: Record<string, unknown>): {
     from(table: unknown): {
       where(condition: unknown): ListSelect;
-      leftJoin(table: unknown, condition: unknown): { where(condition: unknown): ListSelect };
+      leftJoin(table: unknown, condition: unknown): JoinedRead;
     };
   };
 }
@@ -729,6 +734,8 @@ export async function findDocumentDetail(
 }
 
 export interface ListCandidatesQuery {
+  view?: string;
+  supplier?: string;
   status?: string;
   kind?: string;
   onlyPendingEffective: boolean;
@@ -741,63 +748,31 @@ export async function listCandidatesOfOrg(
   organizationId: string,
   query: ListCandidatesQuery,
 ): Promise<{ rows: CandidateRow[]; total: number }> {
-  const docRows = await client
-    .select({
-      id: schema.documents.id,
-      status: schema.documents.status,
-    })
-    .from(schema.documents)
-    .where(eq(schema.documents.organizationId, organizationId))
-    .limit(FETCH_LIMIT);
-  const statusById = new Map<string, string>();
-  for (const row of docRows) {
-    const id = asStringOrNull(row["id"]);
-    const status = asStringOrNull(row["status"]);
-    if (id !== null && status !== null) {
-      statusById.set(id, status);
-    }
+  const current = alias(schema.documents, "candidate_current");
+  const compared = alias(schema.documents, "candidate_compared");
+  const candidate = schema.duplicateCandidates;
+  const effective = and(ne(current.status, "rejected"), ne(compared.status, "rejected"));
+  const clauses = [eq(current.organizationId, organizationId), eq(compared.organizationId, organizationId)];
+  if (query.kind) clauses.push(eq(candidate.kind, query.kind));
+  if (query.view === "pendientes") clauses.push(eq(candidate.status, "pending"), effective!);
+  else if (query.view === "resueltos") clauses.push(or(eq(candidate.status,"distinct"),eq(candidate.status,"duplicate"),eq(candidate.status,"overridden"))!);
+  else if (!query.view) {
+    if (query.status) clauses.push(eq(candidate.status, query.status));
+    if (query.onlyPendingEffective) clauses.push(or(ne(candidate.status,"pending"),effective)!);
   }
-  // Los candidatos no llevan organización: se buscan por cada
-  // documento de la org (por construcción A-01 son intra-org, así
-  // que el lado documentId de algún documento de la org los cubre
-  // a todos). Se deduplica por id.
-  const candidateById = new Map<string, CandidateRow>();
-  for (const documentId of statusById.keys()) {
-    const rows = await client
-      .select(CANDIDATE_FIELDS)
-      .from(schema.duplicateCandidates)
-      .where(eq(schema.duplicateCandidates.documentId, documentId))
-      .limit(FETCH_LIMIT);
-    for (const row of rows) {
-      const candidate = mapCandidateRow(row);
-      if (candidate !== null && !candidateById.has(candidate.id)) {
-        candidateById.set(candidate.id, candidate);
-      }
-    }
-  }
-  let candidates = [...candidateById.values()];
-  if (query.status !== undefined) {
-    candidates = candidates.filter((row) => row.status === query.status);
-  }
-  if (query.kind !== undefined) {
-    candidates = candidates.filter((row) => row.kind === query.kind);
-  }
-  if (query.onlyPendingEffective) {
-    // PD-14: un pendiente es efectivo solo si NINGUNO de sus dos
-    // documentos está en rejected. Un documento desconocido (fuera
-    // de la org, caso legado) no cuenta como rechazado.
-    candidates = candidates.filter((row) => {
-      if (row.status !== "pending") {
-        return true;
-      }
-      const a = statusById.get(row.documentId);
-      const b = statusById.get(row.candidateDocumentId);
-      return a !== "rejected" && b !== "rejected";
-    });
-  }
-  candidates.sort(byCreatedDesc);
-  const total = candidates.length;
-  return { rows: paginate(candidates, query.limit, query.offset), total };
+  const supplier = query.supplier?.trim();
+  if (supplier) clauses.push(or(
+    ilike(sql`${current.supplierName} collate "und-x-icu"`, `%${escapeLike(supplier)}%`),
+    ilike(sql`${compared.supplierName} collate "und-x-icu"`, `%${escapeLike(supplier)}%`),
+  )!);
+  const condition = and(...clauses);
+  const from = (fields: Record<string, unknown>) => client.select(fields).from(candidate)
+    .leftJoin(current, eq(current.id,candidate.documentId))
+    .leftJoin(compared, eq(compared.id,candidate.candidateDocumentId));
+  const totals = await from({ total:count() }).where(condition);
+  const rows = await from(CANDIDATE_FIELDS).where(condition)
+    .orderBy(desc(candidate.createdAt),asc(candidate.id)).limit(query.limit).offset(query.offset);
+  return { rows:rows.map(mapCandidateRow).filter((row): row is CandidateRow => row !== null),total:Number(totals[0]?.["total"] ?? 0) };
 }
 
 export interface AuditRow {

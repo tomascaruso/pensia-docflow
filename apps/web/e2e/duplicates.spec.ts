@@ -309,4 +309,23 @@ test.describe("S6 Duplicados", () => {
       .click();
     await expect(page.getByText("Candidato resuelto.")).toBeVisible();
   });
+  test("F10c proveedor y resueltos paginan con total del backend", async ({page}) => {
+    psql(`INSERT INTO documents(organization_id,file_name,file_hash,mime_type,size_bytes,status,supplier_name)
+      SELECT '${orgId}','f10c-'||n,md5('f10c-'||n)||md5('f10c-b-'||n),'application/pdf',1,'needs_review','F10c proveedor' FROM generate_series(0,28) n;
+      INSERT INTO duplicate_candidates(document_id,candidate_document_id,kind,reason_code,status,justification)
+      SELECT a.id,b.id,'business_probable','P1','distinct','fixture' FROM documents a JOIN documents b ON a.organization_id=b.organization_id
+      WHERE a.organization_id='${orgId}' AND a.file_name='f10c-0' AND b.file_name LIKE 'f10c-%' AND b.file_name<>'f10c-0';`);
+    await login(page);
+    await page.goto(`/o/${orgId}/duplicados?view=resueltos&supplier=F10c%20proveedor`);
+    await expect(page.getByText(/Mostrando 1–25 de 28/)).toBeVisible();
+    await page.getByRole("button",{name:"Siguiente",exact:true}).click();
+    await expect(page.getByText(/Mostrando 26–28 de 28/)).toBeVisible();
+    await expect(page).toHaveURL(/page=2/);
+    await page.getByRole("button",{name:"Comparar",exact:true}).last().click();
+    await expect(page.getByRole("heading",{name:"Comparativa",exact:true})).toBeVisible();
+    await page.getByLabel("Buscar por proveedor").fill("Sin coincidencias F10c");
+    await expect(page.getByRole("heading",{name:"Comparativa",exact:true})).toHaveCount(0);
+    await expect(page).not.toHaveURL(/page=2/);
+  });
+
 });

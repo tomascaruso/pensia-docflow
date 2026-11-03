@@ -125,3 +125,13 @@ inválidas. La comprobación manual requerida de `und-x-icu` está en S7 de
 SCREENS_SPEC.md; no se incorporan infraestructura ni cambios de colación.
 El fake valida su gramática acotada antes de evaluar filas; su ILIKE es una
 aproximación para fixtures, y la paridad Unicode se demuestra con PostgreSQL real.
+
+## F10c — Filtros completos de duplicados
+
+Implementado y validado en la rama local F10c; publicación y aprobación de release pendientes.
+
+Listado S6 con vistas pendientes/resueltos/todos, proveedor literal ICU y tipo,
+conteo y paginación SQL sin recortes previos. Compatibilidad de parámetros
+legados, PD-14 y aislamiento de ambos documentos. Frontend sin filtros locales
+ni búsqueda auxiliar; conserva caché, URL y degradación de detalles a null.
+No modifica detección, resolución, permisos, cuarentena ni aprobación.

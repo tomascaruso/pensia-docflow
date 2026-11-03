@@ -508,6 +508,16 @@ describe.skipIf(!process.env.DOCFLOW_F0_TEST)(
       expect((all.json() as { total: number }).total).toBe(2);
     });
 
+    it("F10c: vistas y validación del contrato HTTP", async () => {
+      const get = (query:string) => app.inject({method:"GET",url:`/organizations/${orgA}/duplicate-candidates?${query}`,headers:{cookie:reviewerCookie}});
+      for (const query of ["view=pendientes&status=pending","view=todos&onlyPendingEffective=false","view=otro","kind=otro","supplier="+"x".repeat(201),"limit=2x","offset=-1","supplier=a&supplier=b"]) expect((await get(query)).statusCode,query).toBe(400);
+      expect((await get("view=pendientes")).json().total).toBe(1);
+      expect((await get("view=resueltos")).json().total).toBe(0);
+      expect((await get("view=todos")).json().total).toBe(2);
+      expect((await get("view=todos&supplier=%20%20")).json().total).toBe(2);
+      expect((await get("view=todos&limit=200")).json().limit).toBe(100);
+    });
+
     it("4. auditoría con filtros", async () => {
       const byAction = await app.inject({
         method: "GET",

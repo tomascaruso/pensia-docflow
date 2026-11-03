@@ -325,6 +325,24 @@ barrera de carga (S4) y un evento de auditoría, no un candidato.
 La pantalla lo explica en una nota superior para evitar la confusión
 más común del producto.
 
+### Contrato de listado F10c (S6)
+
+GET duplicate-candidates acepta view=pendientes|resueltos|todos y supplier (trim,
+200 caracteres, vacío sin filtro). Con view no se permite status ni
+onlyPendingEffective (400). Sin view se conservan sus defaults y semántica.
+Pendientes exige pending con ambos documentos no rejected (PD-14). Resueltos
+incluye distinct/duplicate/overridden, nunca pendientes inefectivos. Todos incluye
+el historial completo de estados. Tipo, vista y proveedor se combinan por AND.
+Proveedor busca en cualquiera de los dos documentos mediante ILIKE y und-x-icu,
+con %, _ y barra inversa literales (mismo requisito de instalación descrito en S7).
+Ambos documentos deben ser de la organización; candidatos inconsistentes se
+excluyen del conteo/listado, sin mutarlos ni cambiar su cuarentena en resolución.
+PostgreSQL calcula total y página (máximo 100), sin FETCH_LIMIT ni consultas por
+cada documento: orden createdAt descendente e ID ascendente como desempate.
+S6 conserva filtros en URL, vuelve a página 1 y limpia selección al cambiarlos.
+Solo enriquece detalles de la página usando caché; un detalle fallido queda null
+sin eliminar candidatos. El total procede exclusivamente del backend.
+
 ## S7. Exportaciones
 
 **Propósito:** exportar solo aprobados, y dejar registro de cada

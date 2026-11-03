@@ -202,7 +202,7 @@ describe("DuplicatesPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("vista pendientes por defecto envía onlyPendingEffective=true", async () => {
+  it("vista pendientes por defecto envía view=pendientes", async () => {
     const { fetchMock, calledUrls } = standardFetch([makeCandidate()], 1);
     renderPage("org_admin", fetchMock);
     await waitFor(() =>
@@ -211,8 +211,8 @@ describe("DuplicatesPage", () => {
     const listUrl = calledUrls.find((u) =>
       u.includes("/duplicate-candidates?"),
     );
-    expect(listUrl).toContain("status=pending");
-    expect(listUrl).toContain("onlyPendingEffective=true");
+    expect(listUrl).toContain("view=pendientes");
+    expect(listUrl).not.toContain("onlyPendingEffective");
   });
 
   it("reviewer ante exacto: excepción deshabilitada con texto A-07", async () => {

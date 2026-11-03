@@ -64,6 +64,8 @@ function getCandidateId(request: FastifyRequest): string | undefined {
 const CANDIDATE_LIST_MAX_LIMIT = 100;
 
 interface CandidateListQuery {
+  view?: string;
+  supplier?: string;
   limit: number;
   offset: number;
   status?: string;
@@ -73,6 +75,14 @@ interface CandidateListQuery {
 
 function parseCandidateListQuery(query: unknown): CandidateListQuery | null {
   const q = (query ?? {}) as Record<string, unknown>;
+  const view = q["view"];
+  if (view !== undefined && (typeof view !== "string" || !["pendientes","resueltos","todos"].includes(view) || q["status"] !== undefined || q["onlyPendingEffective"] !== undefined)) return null;
+  if (q["supplier"] !== undefined && typeof q["supplier"] !== "string") return null;
+  const supplier = typeof q["supplier"] === "string" ? q["supplier"].trim() : undefined;
+  if (supplier && supplier.length > 200) return null;
+  for (const key of ["limit","offset"]) {
+    if (q[key] !== undefined && (typeof q[key] !== "string" || !/^\d+$/.test(q[key]) || !Number.isSafeInteger(Number(q[key])))) return null;
+  }
   let limit = 25;
   if (q["limit"] !== undefined) {
     const parsed = Number.parseInt(String(q["limit"]), 10);
@@ -119,7 +129,7 @@ function parseCandidateListQuery(query: unknown): CandidateListQuery | null {
       return null;
     }
   }
-  return { limit, offset, status, kind, onlyPendingEffective };
+  return { limit, offset, status, kind, onlyPendingEffective, view: view as string | undefined, supplier: supplier || undefined };
 }
 
 export function registerDuplicateCandidateRoutes(
