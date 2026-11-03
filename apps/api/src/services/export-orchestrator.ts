@@ -153,7 +153,7 @@ function toIsoDate(value: Date | string | null): string | null {
   return null;
 }
 
-export async function generateExportCsv(
+export async function generateExportFile(
   deps: ExportOrchestratorDeps,
   input: GenerateExportCsvInput,
 ): Promise<GenerateExportCsvResult> {
@@ -169,33 +169,11 @@ export async function generateExportCsv(
     input.organizationId,
   );
   if (!generation.ok) {
-    try {
-      await deps.audit({
-        actorId: input.actorUserId,
-        action: "export.generation_failed",
-        entityType: "export",
-        entityId: input.exportId,
-        details: { problems: generation.problems },
-      });
-    } catch {
-      // Nunca enmascara el 409 (D8).
-    }
     throw new ExportGenerationFailedError(generation.problems);
   }
   const coherence = await deps.generation.verifyExportCoherence(input.exportId);
   if (!coherence.ok) {
     const problems = coherence.discrepancies;
-    try {
-      await deps.audit({
-        actorId: input.actorUserId,
-        action: "export.generation_failed",
-        entityType: "export",
-        entityId: input.exportId,
-        details: { problems },
-      });
-    } catch {
-      // Nunca enmascara el 409 (D8).
-    }
     throw new ExportGenerationFailedError(problems);
   }
   const delimiter = deps.options?.delimiter ?? ";";
@@ -220,33 +198,10 @@ export async function generateExportCsv(
     }
   } catch (error) {
     if (error instanceof CsvSizeExceededError) {
-      try {
-        await deps.audit({
-          actorId: input.actorUserId,
-          action: "export.generation_failed",
-          entityType: "export",
-          entityId: input.exportId,
-          details: { reason: "size_exceeded" },
-        });
-      } catch {
-        // Nunca enmascara el 413 (D8).
-      }
       throw new ExportTooLargeError(error.sizeBytes, error.maxBytes);
     }
     throw error;
   }
-  // Auditoría de éxito: si falla, propaga (500, no se sirve el archivo).
-  await deps.audit({
-    actorId: input.actorUserId,
-    action: "export.downloaded",
-    entityType: "export",
-    entityId: input.exportId,
-    details: {
-      export_id: input.exportId,
-      file: input.file,
-      row_count: rowCount,
-    },
-  });
   const datePart = toIsoDate(details.createdAt);
   if (datePart === null) {
     throw new Error(
@@ -264,4 +219,24 @@ export async function generateExportCsv(
     mimeType: "text/csv; charset=utf-8",
     rowCount,
   };
+}
+
+/** Preparar un archivo no registra entrega. Solo esta envoltura de descarga
+ * audita la respuesta preparada para enviar, nunca su recepción en el cliente.
+ */
+export async function generateExportCsv(deps: ExportOrchestratorDeps, input: GenerateExportCsvInput): Promise<GenerateExportCsvResult> {
+  let result: GenerateExportCsvResult;
+  try { result = await generateExportFile(deps, input); }
+  catch (error) {
+    if (error instanceof ExportGenerationFailedError || error instanceof ExportTooLargeError) {
+      try {
+        await deps.audit({ actorId: input.actorUserId, action: "export.generation_failed", entityType: "export", entityId: input.exportId,
+          details: error instanceof ExportTooLargeError ? { reason: "size_exceeded" } : { problems: error.problems } });
+      } catch { /* Preservar 409/413. */ }
+    }
+    throw error;
+  }
+  await deps.audit({ actorId: input.actorUserId, action: "export.downloaded", entityType: "export", entityId: input.exportId,
+    details: { export_id: input.exportId, file: input.file, row_count: result.rowCount } });
+  return result;
 }

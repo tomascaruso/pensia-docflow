@@ -5,6 +5,11 @@ import { createFakeDb } from "./fake-tx.js";
 import * as schema from "../db/schema.js";
 
 describe("fake SQL paginado", () => {
+  it("rechaza UPDATE SQL desconocido y locks desconocidos incluso sin filas", () => {
+    const db = createFakeDb(new Map([[schema.exports, []]]));
+    expect(() => db.update(schema.exports).set({ completedAt: sql`unsupported()` }).where(eq(schema.exports.id, "absent"))).toThrow(/UPDATE no soportado/);
+    expect(() => db.select({ id: schema.exports.id }).from(schema.exports).for("share")).toThrow(/lock no soportado/);
+  });
   it.each(["b", "missing"])("JOIN con cursor constante %s conserva WHERE y semántica LEFT JOIN", async id => {
     const bookmark = alias(schema.documents, "cursor");
     const db = createFakeDb(new Map<unknown, Array<Record<string, unknown>>>([

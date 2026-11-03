@@ -359,7 +359,7 @@ describe("POST /organizations/:orgId/exports", () => {
     expect(res.statusCode).toBe(201);
     const body = res.json() as Record<string, unknown>;
     expect(body["documentCount"]).toBe(1);
-    expect(body["status"]).toBe("pending");
+    expect(body["status"]).toBe("completed");
     expect(typeof body["id"]).toBe("string");
     expect(typeof body["createdAt"]).toBe("string");
     expect(tables.get(schema.exports)).toHaveLength(1);
@@ -375,6 +375,53 @@ describe("POST /organizations/:orgId/exports", () => {
     await app.ready();
     const res = await postExport(app);
     expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ status: "completed", completedAt: expect.any(String) });
+  });
+
+  it("F11b: ambos archivos preparados, un completed y cero downloaded", async () => {
+    const { app, tables } = await buildTestApp(ADMIN, baseSeed);
+    const res = await postExport(app);
+    expect(res.statusCode).toBe(201);
+    expect(auditOf(tables).map(e => e.action)).toEqual(["export.created", "export.completed"]);
+    expect(tables.get(schema.exports)?.[0]).toMatchObject({ status: "completed", completedAt: expect.any(Date) });
+  });
+
+  it("F11b: fallo exclusivo de líneas revierte creación e ítems", async () => {
+    const { app, tables } = await buildTestApp(ADMIN, t => {
+      baseSeed(t); t.get(schema.extractionLines)![0].description = "x".repeat(5000);
+    });
+    const previous = process.env.DOCFLOW_CSV_MAX_BYTES;
+    process.env.DOCFLOW_CSV_MAX_BYTES = "4096";
+    try {
+      expect((await postExport(app)).statusCode).toBe(413);
+      expect(tables.get(schema.exports)).toHaveLength(0);
+      expect(tables.get(schema.exportItems)).toHaveLength(0);
+      expect(auditOf(tables)).toHaveLength(0);
+    } finally { if (previous === undefined) delete process.env.DOCFLOW_CSV_MAX_BYTES; else process.env.DOCFLOW_CSV_MAX_BYTES = previous; }
+  });
+
+  it("F11b: histórico failed conserva selección, reintenta mismo ID y es idempotente", async () => {
+    const { app, tables } = await buildTestApp(ADMIN, t => {
+      baseSeed(t); seedExport(t); seedItem(t, "export-01", "doc-01");
+      t.get(schema.documents)![0].status = "needs_review";
+    });
+    const prepare = () => app.inject({ method: "POST", url: "/organizations/org-01/exports/export-01/prepare", payload: {} });
+    expect((await prepare()).statusCode).toBe(409);
+    expect(tables.get(schema.exports)![0].status).toBe("failed");
+    expect(tables.get(schema.exportItems)).toHaveLength(1);
+    tables.get(schema.documents)![0].status = "approved";
+    const ok = await prepare(); expect(ok.statusCode).toBe(200);
+    const again = await prepare(); expect(again.json()).toEqual(ok.json());
+    expect(auditOf(tables).map(e => e.action)).toEqual(["export.generation_failed", "export.completed"]);
+  });
+
+  it("F11b: completed histórico NULL no inventa fecha; cuerpo sustituto es 400", async () => {
+    const { app, tables } = await buildTestApp(ADMIN, t => { baseSeed(t); seedExport(t, { status: "completed" }); });
+    const url = "/organizations/org-01/exports/export-01/prepare";
+    const ok = await app.inject({ method: "POST", url, payload: {} });
+    expect(ok.json()).toEqual({ id: "export-01", status: "completed", completedAt: null });
+    expect((await app.inject({ method: "POST", url, payload: { documentIds: ["other"] } })).statusCode).toBe(400);
+    expect(auditOf(tables)).toHaveLength(0);
   });
 
   it("documento de otra org → 404 sin fila", async () => {

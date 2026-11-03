@@ -603,9 +603,10 @@ describe.skipIf(!process.env.DOCFLOW_F0_TEST)(
       ]);
       // Actividad reciente: las 10 últimas, más nuevas primero.
       // Incluye los eventos reales del flujo (creación de org,
-      // invitación, aceptación, exportación) además de los 3
+      // invitación, aceptación, creación y preparación de exportación) además de los 3
       // sembrados, que quedan como los más antiguos.
-      expect(body.recentActivity).toHaveLength(7);
+      expect(body.recentActivity).toHaveLength(8);
+      expect(body.recentActivity.filter((e: { action: string }) => e.action === "export.completed")).toHaveLength(1);
       expect(body.recentActivity.slice(-3).map((e) => e.action)).toEqual([
         "document.rejected",
         "document.approved",

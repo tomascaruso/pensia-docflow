@@ -55,10 +55,12 @@ export function auditActionLabel(action: string): string {
       return "Aceptó la excepción de un duplicado exacto";
     case "export.created":
       return "Creó una exportación";
+    case "export.prepare_denied":
+      return "Denegó la preparación de una exportación";
     case "export.completed":
-      return "Completó una exportación";
+      return "Completó la preparación de ambos CSV";
     case "export.downloaded":
-      return "Descargó una exportación";
+      return "Preparó una respuesta CSV para enviar";
     case "export.generation_failed":
       return "Falló la generación de una exportación";
     case "invitation.created":

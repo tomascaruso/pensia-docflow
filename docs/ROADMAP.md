@@ -147,7 +147,19 @@ consumir el resto de las páginas ni auditar una descarga exitosa.
 Se conservan formato, escape, nombres, permisos y límite de 100 documentos
 nuevos / 5 MiB por CSV (configurable como antes). No hay cambios de esquema.
 
-Pendiente **F11b**: contrato y transiciones de estados de exportación,
+Contrato **F11b** (implementado en la sección siguiente): contrato y transiciones de estados de exportación,
 `completed_at` y acciones reales de preparación/reintento. F11a no los cambia
 ni incorpora endpoints o eventos de ciclo de vida. El tope histórico del
 listado de exportaciones es independiente de la generación y no se modifica.
+
+## F11b — Preparación síncrona y ciclo persistido
+
+Creación prepara y valida ambos CSV con F11a en una transacción consistente;
+confirma completed y clock_timestamp() junto a export.created/export.completed.
+Sin archivos archivados ni cola. Un fallo inicial revierte toda la creación.
+El endpoint POST /organizations/:orgId/exports/:exportId/prepare usa ítems y
+criterios persistidos, bloqueo por organización/ID, permiso revalidado y
+savepoint. Fallos controlados de históricos confirman failed con auditoría;
+fallos de auditoría/conexión revierten. Conflictos 40001 responden 409 identificable.
+Completados son idempotentes, incluida su fecha NULL histórica. La descarga no
+altera preparación ni acredita recepción del archivo por el navegador.

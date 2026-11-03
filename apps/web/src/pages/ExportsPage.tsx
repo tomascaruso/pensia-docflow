@@ -1,3 +1,4 @@
+import { usePrepareExport } from "../hooks/usePrepareExport";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -80,6 +81,7 @@ export function ExportsPage() {
     page,
   );
   const createExport = useCreateExport(orgId);
+  const prepareExport = usePrepareExport(orgId);
 
   function updateParams(next: {
     status?: ExportsStatusFilter;
@@ -177,6 +179,8 @@ export function ExportsPage() {
         canExport={canExport}
         onPageChange={(next) => updateParams({ page: next })}
         onRetry={() => exportsQuery.refetch()}
+        preparingId={prepareExport.isPending ? prepareExport.variables : undefined}
+        onPrepare={id => prepareExport.mutate(id, { onError: error => toast.error(error.message) })}
         onCreateClick={() => setDialogOpen(true)}
       />
       <CreateExportDialog

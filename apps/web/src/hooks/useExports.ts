@@ -20,9 +20,8 @@ export const EXPORTS_PAGE_SIZE = 25;
  * Brechas documentadas (no inventadas):
  * - "Cantidad de filas" del spec no existe en el DTO de lista
  *   (Export no trae lineCount): la tabla no muestra esa columna.
- * - exports.status no muta en el backend (deuda B6): en la
- *   práctica las filas quedan en "pending"; se muestra el estado
- *   tal cual lo devuelve el backend, sin inventar transiciones.
+ * - F11b devuelve el estado persistido de preparación; las mutaciones
+ *   de creación/preparación invalidan este listado.
  * - No hay endpoint de detalle: "Ver detalle" del spec no se
  *   implementa; la fila muestra todos los campos disponibles.
  */

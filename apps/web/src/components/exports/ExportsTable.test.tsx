@@ -105,7 +105,7 @@ describe("ExportsTable", () => {
     );
   });
 
-  it("pending muestra En preparación + indicador sin porcentaje", () => {
+  it("pending muestra Pendiente de preparar + indicador sin porcentaje", () => {
     render(
       <ExportsTable
         {...BASE_PROPS}
@@ -114,26 +114,35 @@ describe("ExportsTable", () => {
         isError={false}
       />,
     );
-    expect(screen.getByText("En preparación")).toBeInTheDocument();
+    expect(screen.getByText("Pendiente de preparar")).toBeInTheDocument();
     expect(
-      screen.getByText("Preparando exportación…"),
+      screen.getByText("Todavía no se verificaron ambos CSV."),
     ).toBeInTheDocument();
   });
 
   it("failed muestra Error + Reintentar", () => {
-    const onRetry = vi.fn();
+    const onPrepare = vi.fn();
     render(
       <ExportsTable
         {...BASE_PROPS}
         exports={[exportRow({ status: "failed" })]}
         isPending={false}
         isError={false}
-        onRetry={onRetry}
+        onPrepare={onPrepare}
       />,
     );
     expect(screen.getByText("Error")).toBeInTheDocument();
-    screen.getByRole("button", { name: "Reintentar" }).click();
-    expect(onRetry).toHaveBeenCalledTimes(1);
+    screen.getByRole("button", { name: "Reintentar preparación" }).click();
+    expect(onPrepare).toHaveBeenCalledTimes(1);
+    expect(onPrepare).toHaveBeenCalledWith(exportRow().id);
+  });
+
+  it("sin permiso no permite preparar un histórico", () => {
+    const onPrepare = vi.fn();
+    render(<ExportsTable {...BASE_PROPS} exports={[exportRow({ status: "pending" })]} isPending={false} isError={false} canExport={false} onPrepare={onPrepare} />);
+    const button = screen.getByRole("button", { name: "Preparar ambos CSV" });
+    expect(button).toBeDisabled(); button.click();
+    expect(onPrepare).not.toHaveBeenCalled();
   });
 
   it("vacío → texto A-04 del spec; loading → esqueleto; error → alerta", () => {
@@ -191,7 +200,7 @@ describe("ExportsTable", () => {
         isError={false}
       />,
     );
-    const pending = screen.getByText("En preparación");
+    const pending = screen.getByText("Pendiente de preparar");
     const completed = screen.getByText("Lista");
     const failed = screen.getByText("Error");
     expect(pending.className).toContain("bg-amber-50");

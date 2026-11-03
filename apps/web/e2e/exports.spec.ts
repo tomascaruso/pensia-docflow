@@ -307,7 +307,10 @@ test.describe("S7 Exportaciones", () => {
     await approved.check();
     await page.getByRole("button", { name: "Crear exportación" }).click();
     await expect(page.getByText("Exportación creada.")).toBeVisible();
-    await expect(page.getByText("En preparación").first()).toBeVisible();
+    await expect(page.getByText("Lista", { exact: true }).first()).toBeVisible();
+    await page.reload();
+    await expect(page.getByText("Lista", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Preparando exportación…", { exact: true })).toHaveCount(0);
   });
 
   test("Ver una exportación existente en la lista con sus campos", async ({
@@ -324,7 +327,7 @@ test.describe("S7 Exportaciones", () => {
     const exportId = seedExport(orgId, docId);
     await login(page);
     await page.goto(`/o/${orgId}/exportaciones`);
-    await expect(page.getByText("En preparación").first()).toBeVisible();
+    await expect(page.getByText("Pendiente de preparar", { exact: true }).first()).toBeVisible();
     const mainLink = page
       .getByRole("link", { name: "Descargar CSV principal" })
       .first();
@@ -332,6 +335,15 @@ test.describe("S7 Exportaciones", () => {
     expect(await mainLink.getAttribute("href")).toContain(
       `/organizations/${orgId}/exports/${exportId}/csv?file=main`,
     );
+    const row = page.getByRole("row").filter({ has: page.locator(`a[href$="/exports/${exportId}/csv?file=main"]`) });
+    psql(`UPDATE documents SET status='needs_review' WHERE id='${docId}' AND organization_id='${orgId}';`);
+    await row.getByRole("button", { name: "Preparar ambos CSV", exact: true }).click();
+    await expect(row.getByText("Error", { exact: true })).toBeVisible();
+    psql(`UPDATE documents SET status='approved' WHERE id='${docId}' AND organization_id='${orgId}';`);
+    await row.getByRole("button", { name: "Reintentar preparación", exact: true }).click();
+    await expect(row.getByText("Lista", { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("row").filter({ has: page.locator(`a[href$="/exports/${exportId}/csv?file=main"]`) }).getByText("Lista", { exact: true })).toBeVisible();
   });
 
   test("Descargar el CSV principal dispara una descarga .csv", async ({

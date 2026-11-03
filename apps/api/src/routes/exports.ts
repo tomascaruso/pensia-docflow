@@ -1,3 +1,4 @@
+import { prepareExportPair, completeExport, prepareExistingExport, isSerializationConflict, ExportPreparationConflict } from "../services/export-preparation.js";
 /**
  * DocFlow B6 — Rutas de exportaciones CSV.
  *
@@ -183,6 +184,10 @@ export function registerExportRoutes(
     permission: "export_documents",
     deniedAction: "export.create_denied",
   });
+  const prepareRole = requireRole({
+    checkEffectivePermission: input => hasEffectivePermission(createPermissionServiceDeps(deps.db), input),
+    audit: dbAudit, permission: "export_documents", deniedAction: "export.prepare_denied",
+  });
   const downloadRole = requireRole({
     checkEffectivePermission: (input) =>
       hasEffectivePermission(createPermissionServiceDeps(deps.db), input),
@@ -229,6 +234,7 @@ export function registerExportRoutes(
       let filters;
       try { filters = normalizeSelection(body as Record<string, unknown>); }
       catch (error) { if (error instanceof ExportSelectionError) return invalidRequest(reply, error.message); throw error; }
+      let prepared: Awaited<ReturnType<typeof completeExport>> | undefined;
       const details = await deps.db.transaction(async (tx) => {
         const { exportId } = await createExport(
           createExportServiceDeps(tx),
@@ -240,6 +246,7 @@ export function registerExportRoutes(
             ...filters,
           },
         );
+        prepared = await completeExport(tx, orgId, exportId, user.id, await prepareExportPair(tx, orgId, exportId, user.id));
         const found = await createExportCsvDrizzle(
           tx,
         ).findExportDetails(exportId, orgId);
@@ -249,15 +256,26 @@ export function registerExportRoutes(
           );
         }
         return found;
-      });
+      }, { isolationLevel: "repeatable read" }).catch(error => { if (isSerializationConflict(error)) throw new ExportPreparationConflict(); throw error; });
       return reply.code(201).send({
         id: details.id,
         documentCount: details.documentCount,
         status: details.status as ExportStatus,
         createdAt: toIsoOrNull(details.createdAt),
+        completedAt: prepared?.completedAt ?? null,
       } satisfies ExportCreateResponse);
     },
   );
+
+  app.post("/organizations/:orgId/exports/:exportId/prepare", { preHandler: [session, membership, prepareRole] }, async (request, reply) => {
+    const orgId = getOrgId(request), exportId = getExportId(request);
+    if (!orgId || !exportId) return notFound(reply);
+    if (!request.user) return unauthorized(reply);
+    if (request.body !== undefined && (request.body === null || typeof request.body !== "object" || Array.isArray(request.body) || Object.keys(request.body).length)) {
+      return invalidRequest(reply, "La preparación utiliza exclusivamente la selección persistida.");
+    }
+    return reply.send(await prepareExistingExport(deps.db, orgId, exportId, request.user.id));
+  });
 
   app.get(
     "/organizations/:orgId/exports/:exportId/csv",
