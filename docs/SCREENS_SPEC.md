@@ -594,3 +594,21 @@ muestran sus valores vigentes (10 MB, 20 páginas, tolerancia
 inicial 0,01); no hay estado vacío de configuración. Las tarjetas
 de integración sin proveedor definido muestran "Pendiente de
 definir", que es un estado informativo, no un error.
+
+### Precisión F11b — permiso después de una espera
+
+La preparación RR adquiere la fila por organización/ID con NOWAIT. Si encuentra
+contención (55P03), se aborta esa instantánea; una transacción READ COMMITTED
+espera la fila sin autorizar, preparar ni escribir. Tras liberarla se inicia
+otra RR y se intenta adquirir NOWAIT, con un máximo de tres intentos; contención
+persistente o serialización responde 409 export_preparation_conflict. Así una
+revocación confirmada antes de liberar la espera es visible en la autorización
+posterior, sin perder la instantánea consistente para ambos CSV ni usar otra
+conexión para consultar permisos mientras se retiene la transacción bloqueada.
+
+La denegación interna se audita después del rollback como export.prepare_denied.
+El preHandler denegado no entra al servicio: un intento no se registra dos veces.
+No se persiste failed por una denegación. Política D8 existente: si falla el
+escritor de auditoría, se conserva el 403 y el estado anterior; en ese caso no se
+puede afirmar que el intento haya quedado registrado. La etiqueta es “Intentó
+preparar una exportación” y conserva el indicador “Intento denegado”.

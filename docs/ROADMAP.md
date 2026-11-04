@@ -163,3 +163,8 @@ savepoint. Fallos controlados de históricos confirman failed con auditoría;
 fallos de auditoría/conexión revierten. Conflictos 40001 responden 409 identificable.
 Completados son idempotentes, incluida su fecha NULL histórica. La descarga no
 altera preparación ni acredita recepción del archivo por el navegador.
+
+Precisión F11b: descartar instantáneas anteriores a esperas de fila mediante
+NOWAIT + espera coordinadora READ COMMITTED + RR nueva (máximo tres intentos).
+Auditar denegaciones internas fuera del rollback sin duplicar preHandler;
+conservar política D8 (403 aun si falla la auditoría), estado e idempotencia.

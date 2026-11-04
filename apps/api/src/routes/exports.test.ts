@@ -386,6 +386,15 @@ describe("POST /organizations/:orgId/exports", () => {
     expect(tables.get(schema.exports)?.[0]).toMatchObject({ status: "completed", completedAt: expect.any(Date) });
   });
 
+  it("prepare denegado por preHandler se audita una sola vez y no cambia el histórico", async () => {
+    const { app, tables } = await buildTestApp(REVIEWER, t => { baseSeed(t); seedExport(t); seedItem(t, "export-01", "doc-01"); });
+    const before = structuredClone(tables.get(schema.exports));
+    const res = await app.inject({ method: "POST", url: "/organizations/org-01/exports/export-01/prepare", payload: {} });
+    expect(res.statusCode).toBe(403);
+    expect(tables.get(schema.exports)).toEqual(before);
+    expect(auditOf(tables).map(e => e.action)).toEqual(["export.prepare_denied"]);
+  });
+
   it("F11b: fallo exclusivo de líneas revierte creación e ítems", async () => {
     const { app, tables } = await buildTestApp(ADMIN, t => {
       baseSeed(t); t.get(schema.extractionLines)![0].description = "x".repeat(5000);

@@ -1,3 +1,4 @@
+import { Client } from "pg";
 import * as auditWriterModule from "../db/audit-writer.js";
 import { AuditSensitiveDetailsError } from "../db/audit-writer.js";
 import { createExport } from "../db/export-service.js";
@@ -506,6 +507,63 @@ describe.skipIf(!process.env.DOCFLOW_B6_TEST)(
       const beyond = await list("supplier=Final%20%C3%BAnico");
       expect(beyond.json().total).toBe(1);
       expect(beyond.json().documents[0].supplierName).toBe("Final único");
+    });
+
+    it.each([false, true])("F11b: revocación confirmada mientras prepare espera la fila (auditoría falla=%s)", async auditFails => {
+      const orgId = await createOrg("F11b revocación en espera");
+      await addReviewer(orgId);
+      const grant = await app.inject({ method: "POST", url: `/organizations/${orgId}/grants`, headers: { cookie: adminCookie }, payload: { userId: reviewerUserId, permissionKey: "export_documents" } });
+      expect(grant.statusCode).toBe(201);
+      const [doc] = await rawDb.insert(schema.documents).values({ organizationId: orgId, fileName: "race.pdf", fileHash: "a".repeat(64), mimeType: "application/pdf", sizeBytes: 100, status: "approved" }).returning({ id: schema.documents.id });
+      const [exp] = await rawDb.insert(schema.exports).values({ organizationId: orgId, requestedBy: reviewerUserId, documentCount: 1 }).returning();
+      await rawDb.insert(schema.exportItems).values({ exportId: exp.id, documentId: doc.id });
+      const originalWriter = auditWriterModule.writeAuditEvent;
+      const denialSpy = vi.spyOn(auditWriterModule, "writeAuditEvent").mockImplementation((deps, event) => originalWriter(deps,
+        auditFails && event.action === "export.prepare_denied" ? { ...event, details: { supplier_name: "Dato prohibido" } } : event));
+      const lock = new Client({ connectionString: process.env.DATABASE_URL });
+      await lock.connect();
+      let response: Promise<Awaited<ReturnType<typeof app.inject>>> | undefined;
+      try {
+        await lock.query("BEGIN");
+        const pid = (await lock.query("SELECT pg_backend_pid() AS pid")).rows[0].pid as number;
+        await lock.query("SELECT id FROM exports WHERE id=$1 AND organization_id=$2 FOR UPDATE", [exp.id, orgId]);
+        let settled = false;
+        response = Promise.resolve(app.inject({ method: "POST", url: `/organizations/${orgId}/exports/${exp.id}/prepare`, headers: { cookie: reviewerCookie }, payload: {} }));
+        void response.then(() => { settled = true; });
+        const deadline = Date.now() + 2000;
+        let waiter: { pid: number; wait_event_type: string; query: string } | undefined;
+        while (Date.now() < deadline && !settled) {
+          await lock.query("SELECT pg_stat_clear_snapshot()");
+          waiter = (await lock.query("SELECT pid,wait_event_type,query FROM pg_stat_activity WHERE $1::int=ANY(pg_blocking_pids(pid)) AND wait_event_type='Lock'", [pid])).rows[0];
+          if (waiter && waiter.query.includes('from "exports"') && waiter.query.includes("for update")) break;
+          waiter = undefined;
+          await new Promise<void>(resolve => setImmediate(resolve));
+        }
+        expect(waiter, "HTTP superó autorización inicial y espera nuestro bloqueo").toBeDefined();
+        console.info("REVOCATION_WAIT", JSON.stringify({ blocker: pid, waiter }));
+        const revoked = await app.inject({ method: "POST", url: `/organizations/${orgId}/grants/${grant.json().id}/revoke`, headers: { cookie: adminCookie } });
+        expect(revoked.statusCode).toBe(200);
+        const committed = (await lock.query("SELECT revoked_at IS NOT NULL AS revoked FROM member_permissions WHERE id=$1", [grant.json().id])).rows[0];
+        expect(committed.revoked).toBe(true);
+        console.info("REVOCATION_COMMITTED", JSON.stringify(committed));
+        await lock.query("ROLLBACK"); // Libera sin UPDATE: no ocultar snapshot antiguo con 40001.
+        const res = await response;
+        const after = await getExportRow(exp.id);
+        const events = (await getAuditsByOrg(orgId)).filter(e => ["export.completed", "export.prepare_denied", "export.generation_failed"].includes(e.action));
+        console.info("REVOCATION_RESULT", JSON.stringify({ status: res.statusCode, original: exp, after, events }));
+        expect(res.statusCode).toBe(403);
+        expect(after).toEqual(exp);
+        expect(events.map(e => e.action)).toEqual(auditFails ? [] : ["export.prepare_denied"]);
+        const preHandler = await app.inject({ method: "POST", url: `/organizations/${orgId}/exports/${exp.id}/prepare`, headers: { cookie: reviewerCookie }, payload: {} });
+        expect(preHandler.statusCode).toBe(403);
+        const afterSecond = await getAuditsByOrg(orgId);
+        expect(afterSecond.filter(e => e.action === "export.prepare_denied")).toHaveLength(auditFails ? 0 : 2);
+        expect(afterSecond.filter(e => ["export.completed", "export.generation_failed"].includes(e.action))).toHaveLength(0);
+        expect(await getExportRow(exp.id)).toEqual(exp);
+      } finally {
+        await lock.query("ROLLBACK"); await lock.end();
+        await response; denialSpy.mockRestore();
+      }
     });
 
     it("F11b: creación, reloj PostgreSQL, rollback real, históricos y concurrencia", async () => {

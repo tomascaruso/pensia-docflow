@@ -31,6 +31,11 @@ function eventRow(overrides: Partial<AuditEvent> = {}): AuditEvent {
 }
 
 describe("AuditEventsTable", () => {
+  it("export.prepare_denied describe el intento y conserva el indicador de denegación", () => {
+    render(<AuditEventsTable {...BASE_PROPS} events={[eventRow({ action: "export.prepare_denied" })]} isPending={false} isError={false} />);
+    expect(screen.getByText("Intentó preparar una exportación")).toBeInTheDocument();
+    expect(screen.getByText("Intento denegado")).toBeInTheDocument();
+  });
   it("render con columnas del spec, fecha+hora y justificación", () => {
     render(
       <AuditEventsTable

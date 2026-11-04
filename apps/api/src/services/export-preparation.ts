@@ -11,14 +11,16 @@ export interface ExportPreparationResult { id: string; status: "completed"; comp
 export class ExportPreparationConflict extends Error {}
 
 /** Serialización/commit perdidos no son fallos de generación persistibles. */
-export function isSerializationConflict(error: unknown): boolean {
+function hasSqlState(error: unknown, code: string): boolean {
   let current = error;
   for (let i = 0; i < 8 && current && typeof current === "object"; i++) {
-    if ("code" in current && current.code === "40001") return true;
+    if ("code" in current && current.code === code) return true;
     current = "cause" in current ? current.cause : undefined;
   }
   return false;
 }
+export function isSerializationConflict(error: unknown): boolean { return hasSqlState(error, "40001"); }
+export function isLockUnavailable(error: unknown): boolean { return hasSqlState(error, "55P03"); }
 
 export async function prepareExportPair(tx: NodePgDatabase, orgId: string, exportId: string, actorId: string): Promise<{ mainRows: number; lineRows: number }> {
   const deps = createExportServiceDeps(tx);
@@ -56,8 +58,10 @@ export async function completeExport(tx: NodePgDatabase, orgId: string, exportId
 export async function prepareExistingExport(db: NodePgDatabase, orgId: string, exportId: string, actorId: string): Promise<ExportPreparationResult> {
   let outcome;
   try {
-    outcome = await db.transaction(async tx => {
-      const [row] = await tx.select({ id: schema.exports.id, status: schema.exports.status, completedAt: schema.exports.completedAt, selectionFilters: schema.exports.selectionFilters }).from(schema.exports).where(and(eq(schema.exports.id, exportId), eq(schema.exports.organizationId, orgId))).for("update");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        outcome = await db.transaction(async tx => {
+      const [row] = await tx.select({ id: schema.exports.id, status: schema.exports.status, completedAt: schema.exports.completedAt, selectionFilters: schema.exports.selectionFilters }).from(schema.exports).where(and(eq(schema.exports.id, exportId), eq(schema.exports.organizationId, orgId))).for("update", { noWait: true });
       if (!row) throw new ExportNotFoundError();
       const deps = createExportServiceDeps(tx);
       if (!await deps.permissions.hasExportPermission(orgId, actorId)) throw new ExportForbiddenError();
@@ -72,12 +76,37 @@ export async function prepareExistingExport(db: NodePgDatabase, orgId: string, e
         return { error };
       }
       return { result: await completeExport(tx, orgId, exportId, actorId, counts) };
-    }, { isolationLevel: "repeatable read" });
+        }, { isolationLevel: "repeatable read" });
+        break;
+      } catch (error) {
+        if (!isLockUnavailable(error)) throw error;
+        if (attempt === 2) throw new ExportPreparationConflict();
+        // La instantánea RR anterior ya fue abortada. Esperar sin preparar,
+        // autorizar ni escribir; después crear otra RR y adquirir NOWAIT.
+        // Una sola conexión por transacción: sin consultas de autorización
+        // por fuera del pool mientras se retiene una conexión bloqueada.
+        await db.transaction(async waitTx => {
+          await waitTx.select({ id: schema.exports.id }).from(schema.exports)
+            .where(and(eq(schema.exports.id, exportId), eq(schema.exports.organizationId, orgId)))
+            .for("update");
+        }, { isolationLevel: "read committed" });
+      }
+    }
   } catch (error) {
+    if (error instanceof ExportForbiddenError) {
+      // Después del rollback. El preHandler no llega a este servicio cuando
+      // él deniega, por lo que no se duplica el intento. Política D8: 403
+      // incluso si el escritor real de auditoría no logra registrar el intento.
+      try {
+        await createExportServiceDeps(db).audit({ actorId, action: "export.prepare_denied", entityType: "organizations", entityId: orgId,
+          details: { permission_key: "export_documents" } });
+      } catch { /* La auditoría nunca enmascara la denegación. */ }
+    }
     if (isSerializationConflict(error)) throw new ExportPreparationConflict();
     throw error;
   }
   // Fuera del callback: el fallo controlado ya está confirmado junto a su auditoría.
+  if (!outcome) throw new ExportPreparationConflict();
   if (outcome.error) throw outcome.error;
   return outcome.result!;
 }

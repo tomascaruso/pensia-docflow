@@ -56,7 +56,7 @@ export function auditActionLabel(action: string): string {
     case "export.created":
       return "Creó una exportación";
     case "export.prepare_denied":
-      return "Denegó la preparación de una exportación";
+      return "Intentó preparar una exportación";
     case "export.completed":
       return "Completó la preparación de ambos CSV";
     case "export.downloaded":
