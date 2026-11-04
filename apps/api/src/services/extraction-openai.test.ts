@@ -1,12 +1,14 @@
 /**
  * DocFlow B7b — Contract tests del proveedor OpenAI (sin llamada real).
  *
- * Deps falsos: rasterización y completePage inyectados. La única
+ * Incluye costuras falsas y SDK real con transporte simulado. La única
  * llamada real (smoke test + corrida completa) corre por el harness,
  * no por estos tests.
  */
 import { describe, expect, it } from "vitest";
-import type OpenAI from "openai";
+import { vi } from "vitest";
+import { PDFDocument } from "pdf-lib";
+import OpenAI from "openai";
 import {
   createOpenAiExtractionProvider,
   createSdkChatDeps,
@@ -256,5 +258,99 @@ describe("extraction-openai B7c: filtro de líneas", () => {
     });
     expect(result.lineItems).toHaveLength(1);
     expect(result.lineItems[0]?.["description"]).toBe("Servicio A");
+  });
+});
+
+
+// Imágenes válidas de 1x1, no bytes sintéticos disfrazados de imagen.
+const JPEG = new Uint8Array(Buffer.from("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+iiigD//2Q==", "base64"));
+const PNG = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC", "base64"));
+const PNG_2 = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC", "base64"));
+
+function sdkDeps(bytes: Uint8Array, pngPages: Uint8Array[], pages = [PAGE_1]) {
+  const bodies: Array<{
+    model: string; temperature: number;
+    messages: Array<{ content: string | Array<{ type: string; image_url?: { url: string }; text?: string }> }>;
+    response_format: unknown;
+  }> = [];
+  const transport = vi.fn<typeof fetch>(async (_url, init) => {
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fake-image-tests-only");
+    bodies.push(JSON.parse(String(init?.body)));
+    const page = pages[bodies.length - 1] ?? PAGE_1;
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify(page) } }],
+      usage: { prompt_tokens: 1000, completion_tokens: 500 },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  // El SDK instalado recibe exclusivamente este transporte simulado.
+  const client = new OpenAI({ apiKey: "fake-image-tests-only", baseURL: "https://api.openai.com/v1", fetch: transport });
+  const rasterizePdf = vi.fn(async () => pngPages);
+  const deps = { readFile: vi.fn(async () => bytes), rasterizePdf, ...createSdkChatDeps(client) };
+  const provider = createOpenAiExtractionProvider(deps.readFile, { apiKey: "fake-image-tests-only" }, deps);
+  return { provider, deps, transport, bodies, client };
+}
+
+function sentImages(bodies: ReturnType<typeof sdkDeps>["bodies"]): string[] {
+  return bodies.map(body => {
+    const content = body.messages[1]?.content;
+    if (!Array.isArray(content)) throw new Error("Falta imagen en petición SDK");
+    return content.find(c => c.type === "image_url")?.image_url?.url ?? "";
+  });
+}
+
+describe("extraction-openai: MIME y bytes mediante SDK real, transporte simulado", () => {
+  it.each([
+    ["image/jpeg", JPEG, "archivo.png"],
+    ["image/png", PNG, "archivo.jpg"],
+  ] as const)("%s: página única sin rasterización PDF", async (mimeType, bytes, fileKey) => {
+    const pdf = await PDFDocument.create();
+    const image = mimeType === "image/jpeg" ? await pdf.embedJpg(bytes) : await pdf.embedPng(bytes);
+    expect(image.width).toBe(1);
+    expect(image.height).toBe(1);
+    const { provider, deps, transport, bodies } = sdkDeps(bytes, [PNG]);
+    const result = await provider.analyze({ fileKey, mimeType, organizationId: "synthetic" });
+    expect(deps.rasterizePdf).not.toHaveBeenCalled();
+    expect(deps.readFile).toHaveBeenCalledExactlyOnceWith(fileKey);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(sentImages(bodies)).toEqual([`data:${mimeType};base64,${Buffer.from(bytes).toString("base64")}`]);
+    expect(result.fields.find(f => f.key === "supplier_name")?.page).toBe(1);
+    expect(result.lineItems[0]?.description).toBe("Servicio A");
+    expect(provider.getUsageCostUsd()).toBeCloseTo(0.00045, 10);
+  });
+
+  it.each([1, 2])("PDF de %i páginas: mantiene rasterización, MIME PNG y orden", async count => {
+    const pdf = await PDFDocument.create();
+    for (let i = 0; i < count; i++) pdf.addPage();
+    const bytes = await pdf.save();
+    const pngs = [PNG, PNG_2].slice(0, count);
+    const { provider, deps, transport, bodies, client } = sdkDeps(bytes, pngs, [PAGE_1, PAGE_2]);
+    const result = await provider.analyze({ fileKey: "pdf-con-extension.jpg", mimeType: "application/pdf", organizationId: "synthetic" });
+    expect(deps.rasterizePdf).toHaveBeenCalledExactlyOnceWith(bytes);
+    expect(transport).toHaveBeenCalledTimes(count);
+    expect(sentImages(bodies)).toEqual(pngs.map(b => `data:image/png;base64,${Buffer.from(b).toString("base64")}`));
+    expect(result.fields.find(f => f.key === "supplier_name")).toMatchObject({ rawValue: PAGE_1.supplier_name, page: 1 });
+    expect(result.fields.find(f => f.key === "total_amount")).toMatchObject({ rawValue: count === 2 ? "121000.00" : null, page: count === 2 ? 2 : null });
+    expect(result.lineItems.map(l => l.description)).toEqual(["Servicio A", "Servicio B"].slice(0, count));
+    expect(provider.getUsageCostUsd()).toBeCloseTo(count * 0.00045, 10);
+    expect(client.maxRetries).toBe(2);
+    for (const body of bodies) {
+      expect(body.model).toBe("gpt-4o-mini");
+      expect(body.temperature).toBe(0);
+    }
+  });
+
+  it.each(["image/gif", "text/plain", "application/octet-stream", ""])("rechaza MIME %j sin rasterizar ni enviar", async mimeType => {
+    const { provider, deps, transport } = sdkDeps(PNG, [PNG]);
+    await expect(provider.analyze({ fileKey: "parece.pdf", mimeType, organizationId: "synthetic" })).rejects.toThrow(/MIME/);
+    expect(deps.rasterizePdf).not.toHaveBeenCalled();
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("imagen: conserva el manejo de error del SDK sin solicitudes externas", async () => {
+    const { provider, transport } = sdkDeps(JPEG, [PNG]);
+    transport.mockResolvedValue(new Response(JSON.stringify({ error: { message: "invalid request" } }), { status: 400, headers: { "content-type": "application/json" } }));
+    await expect(provider.analyze({ fileKey: "x", mimeType: "image/jpeg", organizationId: "synthetic" })).rejects.toThrow(/error de OpenAI/);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(provider.getUsageCostUsd()).toBe(0);
   });
 });

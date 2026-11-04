@@ -79,6 +79,8 @@ export interface OpenAiChatDeps {
   rasterizePdf: (pdf: Uint8Array) => Promise<Uint8Array[]>;
   completePage: (args: {
     imageBase64: string;
+    /** PNG por defecto para mantener compatibles los llamadores PDF. */
+    imageMimeType?: "image/jpeg" | "image/png";
     pageNumber: number;
     pageCount: number;
     model: string;
@@ -243,7 +245,7 @@ function mapOpenAiError(error: unknown): Error {
 /** Costura de test: la llamada real al SDK queda observable sin llamar a la API. */
 export function createSdkChatDeps(client: OpenAI): Pick<OpenAiChatDeps, "completePage"> {
   return {
-    async completePage({ imageBase64, pageNumber, pageCount, model }) {
+    async completePage({ imageBase64, imageMimeType = "image/png", pageNumber, pageCount, model }) {
       let response;
       try {
         response = await client.chat.completions.create({
@@ -257,7 +259,7 @@ export function createSdkChatDeps(client: OpenAI): Pick<OpenAiChatDeps, "complet
                 { type: "text", text: buildUserPrompt(pageNumber, pageCount) },
                 {
                   type: "image_url",
-                  image_url: { url: `data:image/png;base64,${imageBase64}` },
+                  image_url: { url: `data:${imageMimeType};base64,${imageBase64}` },
                 },
               ],
             },
@@ -368,8 +370,13 @@ export function createOpenAiExtractionProvider(
     getUsageCostUsd: () => totalCost,
     getCostByFileKey: () => ({ ...costByFileKey }),
     async analyze(input): Promise<RawExtraction> {
+      const mimeType = input.mimeType;
+      if (mimeType !== "application/pdf" && mimeType !== "image/jpeg" && mimeType !== "image/png") {
+        throw new Error(`MIME no soportado por OpenAI: ${mimeType}`);
+      }
       const bytes = await chatDeps.readFile(input.fileKey);
-      const pages = await chatDeps.rasterizePdf(bytes);
+      const pages = mimeType === "application/pdf" ? await chatDeps.rasterizePdf(bytes) : [bytes];
+      const imageMimeType = mimeType === "image/jpeg" ? "image/jpeg" : "image/png";
       const parsedPages: OpenAiInvoicePage[] = [];
       const raws: string[] = [];
       let promptTokens = 0;
@@ -378,6 +385,7 @@ export function createOpenAiExtractionProvider(
         const base64 = Buffer.from(pages[i]).toString("base64");
         const { parsed, usage, raw } = await chatDeps.completePage({
           imageBase64: base64,
+          imageMimeType,
           pageNumber: i + 1,
           pageCount: pages.length,
           model,
