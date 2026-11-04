@@ -268,15 +268,26 @@ export async function decideWithOrchestration(
         })),
       });
     }
+    if (input.decision === "approved" && corrections.length > 0) {
+      const existing = await deps.fields.listFieldKeys(input.documentId);
+      for (const correction of corrections) {
+        if (!existing.includes(correction.fieldKey)) {
+          throw new InvalidDecisionRequestError(
+            `campo sin extracción: ${correction.fieldKey}.`,
+          );
+        }
+      }
+      await deps.corrections.applyCorrections(
+        input.documentId,
+        corrections,
+        input.actorUserId,
+      );
+    }
     const rows = await deps.validations.findActiveBlockingValidations(
       input.documentId,
     );
     const blockingValidations: BlockingValidation[] = [];
     for (const row of rows) {
-      // Only this server-persisted conflict may be resolved by an explicit,
-      // format-validated total correction. All other blockers remain enforced.
-      if (row.ruleCode === "total_conflict" && row.fieldKey === "total_amount" &&
-          corrections.some(c => c.fieldKey === "total_amount")) continue;
       if (
         row.ruleCode === "duplicate_business_exact" ||
         row.ruleCode === "duplicate_business_probable"
@@ -298,21 +309,6 @@ export async function decideWithOrchestration(
       throw new DecisionBlockedByValidationsError({
         validations: blockingValidations,
       });
-    }
-    if (input.decision === "approved" && corrections.length > 0) {
-      const existing = await deps.fields.listFieldKeys(input.documentId);
-      for (const correction of corrections) {
-        if (!existing.includes(correction.fieldKey)) {
-          throw new InvalidDecisionRequestError(
-            `campo sin extracción: ${correction.fieldKey}.`,
-          );
-        }
-      }
-      await deps.corrections.applyCorrections(
-        input.documentId,
-        corrections,
-        input.actorUserId,
-      );
     }
     const result = await decide(deps.decision, {
       organizationId: input.organizationId,

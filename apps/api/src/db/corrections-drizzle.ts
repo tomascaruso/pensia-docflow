@@ -1,3 +1,5 @@
+import { normalizeDecimal } from "../services/decimal-normalizer.js";
+import { parseDecimalScaled } from "../services/validation-service.js";
 /**
  * DocFlow B5 — Adaptadores Drizzle de correcciones y valor aprobado.
  *
@@ -27,7 +29,26 @@ import { and, eq } from "drizzle-orm";
 import * as schema from "./schema.js";
 import { buildBusinessKey } from "./business-key.js";
 
+function hasTotalConflictEvidence(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const entries: unknown = JSON.parse(value);
+    if (!Array.isArray(entries) || entries.length < 2) return false;
+    const amounts: bigint[] = [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object" ||
+          typeof entry.value !== "string" || !Number.isInteger(entry.page) || entry.page < 1) return false;
+      const normalized = normalizeDecimal(entry.value);
+      const amount = normalized === null ? null : parseDecimalScaled(normalized);
+      if (amount === null) return false;
+      amounts.push(amount);
+    }
+    return amounts.some(a => a !== amounts[0]);
+  } catch { return false; }
+}
+
 export interface CorrectionsDrizzleClient {
+  delete(table: unknown): { where(condition: unknown): Promise<unknown> };
   select(fields: Record<string, unknown>): {
     from(table: unknown): {
       where(condition: unknown): Promise<Array<Record<string, unknown>>> & {
@@ -134,7 +155,7 @@ export function createCorrectionsWriter(db: CorrectionsDrizzleClient) {
           );
         }
         const fieldRows = await db
-          .select({ id: schema.documentFields.id, isUncertain: schema.documentFields.isUncertain })
+          .select({ id: schema.documentFields.id, isUncertain: schema.documentFields.isUncertain, extractedValue: schema.documentFields.extractedValue })
           .from(schema.documentFields)
           .where(
             and(
@@ -176,14 +197,21 @@ export function createCorrectionsWriter(db: CorrectionsDrizzleClient) {
           next.currency = correction.correctedValue;
         } else if (correction.fieldKey === "total_amount") {
           next.totalAmount = correction.correctedValue;
-          if (fieldRows[0]?.isUncertain === true) await db.update(schema.documentValidations).set({
-            status: "exception_accepted",
-            exceptionJustification: "Conflicto resuelto mediante corrección humana explícita del total.",
-            exceptionAcceptedBy: actorUserId, exceptionAcceptedAt: now,
-          }).where(and(eq(schema.documentValidations.documentId, documentId),
-            eq(schema.documentValidations.ruleCode, "total_conflict"),
-            eq(schema.documentValidations.fieldKey, "total_amount"),
-            eq(schema.documentValidations.status, "active")));
+          if (fieldRows[0]?.isUncertain === true && hasTotalConflictEvidence(fieldRows[0]?.extractedValue)) {
+            const conflict = and(
+              eq(schema.documentValidations.documentId, documentId),
+              eq(schema.documentValidations.ruleCode, "total_conflict"),
+              eq(schema.documentValidations.fieldKey, "total_amount"),
+              eq(schema.documentValidations.severity, "error"),
+              eq(schema.documentValidations.status, "active"));
+            const persisted = await db.select({ id: schema.documentValidations.id })
+              .from(schema.documentValidations).where(conflict);
+            if (persisted.length > 0) {
+              await db.delete(schema.documentValidations).where(conflict);
+              await db.update(schema.documentFields).set({ isUncertain: false }).where(and(
+                eq(schema.documentFields.documentId, documentId), eq(schema.documentFields.fieldKey, "total_amount")));
+            }
+          }
         }
       }
       const businessKey = buildBusinessKey({

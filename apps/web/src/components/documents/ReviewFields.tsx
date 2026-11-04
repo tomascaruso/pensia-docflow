@@ -89,7 +89,11 @@ export function ReviewFields({
                 Revisar este campo
               </p>
             ) : null}
-            {field.fieldKey === "total_amount" && field.isUncertain ? <p role="alert">Conflicto de totales por página: {field.extractedValue}. Revisá el original e ingresá el total; no se seleccionó ningún importe.</p> : null}
+            {field.fieldKey === "total_amount" && field.extractedValue?.startsWith("[") ? (
+              field.correctedValue !== null && !field.isUncertain
+                ? <p>Conflicto original resuelto por corrección humana. Evidencia por página: {field.extractedValue}. Total corregido: {field.correctedValue}.</p>
+                : <p role="alert">Conflicto de totales por página: {field.extractedValue}. Revisá el original e ingresá el total; no se seleccionó ningún importe.</p>
+            ) : null}
             {isPending ? <p>Corregido</p> : null}
             <Input
               id={field.fieldKey}

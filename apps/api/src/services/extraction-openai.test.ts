@@ -372,10 +372,20 @@ describe("totales multipágina: respuestas reales archivadas, sin red", () => {
     expect(mapped.lines.map(l => l.lineNumber)).toEqual(Array.from({ length: 14 }, (_, i) => i + 1));
     expect(validateDocument(mapped).filter(v => v.severity === "error").map(v => v.ruleCode)).toEqual(["total_conflict"]);
   });
-  it.each([["7000.0000", "07000.00"], ["-0.00", "0.0000"]])("totales equivalentes %s / %s conservan el primero", async (a, b) => {
+  it.each([["7000.0000", "07000.00"], ["7.000,00", "7000.00"], ["7.000,00", "7000.0000"], ["-0.00", "0.0000"]])("totales equivalentes %s / %s conservan el primero", async (a, b) => {
     const pages = recorded.pages.map((p, i) => ({ ...p, total_amount: i === 0 ? a : b }));
     const raw = await createOpenAiExtractionProvider(async () => PNG, { apiKey: "fake" }, fakeDeps(pages)).analyze({ fileKey: "x", mimeType: "application/pdf", organizationId: "synthetic" });
     expect(raw.fields.find(f => f.key === "total_amount")).toMatchObject({ rawValue: a, page: 1 });
     expect(raw.fields.find(f => f.key === "total_amount")?.conflictingValues).toBeUndefined();
   });
+});
+
+it.each([["7.000,00", "14000.00"], ["7.000,0000", "7000.0001"]])("conflicto conserva originales %s / %s", async (a, b) => {
+ const pages = [PAGE_1, PAGE_2].map((p, i) => ({ ...p, total_amount: i ? b : a }));
+ const raw = await createOpenAiExtractionProvider(async () => PNG, { apiKey: "fake" }, fakeDeps(pages)).analyze({fileKey:"x",mimeType:"application/pdf",organizationId:"synthetic"});
+ expect(raw.fields.find(f => f.key === "total_amount")).toMatchObject({rawValue:null,conflictingValues:[{value:a,page:1},{value:b,page:2}]});
+});
+it("total multipágina inválido no selecciona otro importe", async () => {
+ const pages = [PAGE_1, PAGE_2].map((p, i) => ({ ...p, total_amount: i ? "7000.00" : "inválido" }));
+ await expect(createOpenAiExtractionProvider(async () => PNG, { apiKey: "fake" }, fakeDeps(pages)).analyze({fileKey:"x",mimeType:"application/pdf",organizationId:"synthetic"})).rejects.toThrow("Total multipágina inválido");
 });

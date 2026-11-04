@@ -735,6 +735,26 @@ describe.skipIf(!process.env.DOCFLOW_B5_TEST)(
       expect(before.find(f => f.fieldKey === "total_amount")?.extractedValue).toContain("14000.00");
       expect((await decide(reviewerCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "14000.00" }] })).statusCode).toBe(403);
       expect((await decide(adminCookie, orgId, id, { decision: "approved", resolved: true })).statusCode).toBe(409);
+      expect((await decide(adminCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "inválido" }] })).statusCode).toBe(400);
+      for (const evidence of ["invalid", JSON.stringify([{ value: "7.000,00", page: 1 }, { value: "7000.0000", page: 2 }])]) {
+        await rawDb.update(schema.documentFields).set({ extractedValue: evidence })
+          .where(and(eq(schema.documentFields.documentId, id), eq(schema.documentFields.fieldKey, "total_amount")));
+        expect((await decide(adminCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "14000.00" }] })).statusCode).toBe(409);
+        expect((await getFields(id)).find(f => f.fieldKey === "total_amount")?.correctedValue).toBeNull();
+        expect((await getValidations(id)).find(v => v.ruleCode === "total_conflict")?.status).toBe("active");
+      }
+      await rawDb.update(schema.documentFields).set({ extractedValue: before.find(f => f.fieldKey === "total_amount")!.extractedValue })
+        .where(and(eq(schema.documentFields.documentId, id), eq(schema.documentFields.fieldKey, "total_amount")));
+      const other = await upload(orgId, "pending-peer.pdf", await makePdf("local pending peer"));
+      const [candidate] = await rawDb.insert(schema.duplicateCandidates).values({
+        documentId: id, candidateDocumentId: other.id, kind: "business_exact",
+        reasonCode: "BUSINESS_EXACT", matchedFieldsJson: {}, status: "pending",
+      }).returning({ id: schema.duplicateCandidates.id });
+      const pending = await decide(adminCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "14000.00" }] });
+      expect(pending.statusCode).toBe(409);
+      expect((pending.json() as { error: string }).error).toBe("decision_blocked_by_candidates");
+      expect(await getFields(id)).toEqual(before);
+      await rawDb.delete(schema.duplicateCandidates).where(eq(schema.duplicateCandidates.id, candidate!.id));
       await rawDb.insert(schema.documentValidations).values({ documentId: id, ruleCode: "unrelated", severity: "error", message: "test blocker", status: "active" });
       expect((await decide(adminCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "14000.00" }] })).statusCode).toBe(409);
       expect(await getFields(id)).toEqual(before);
@@ -754,14 +774,20 @@ describe.skipIf(!process.env.DOCFLOW_B5_TEST)(
       expect((await getDoc(id))?.totalAmount).toBe("14000.0000");
       const total = (await getFields(id)).find(f => f.fieldKey === "total_amount");
       expect(total).toMatchObject({ extractedValue: before.find(f => f.fieldKey === "total_amount")?.extractedValue, correctedValue: "14000.00", approvedValue: "14000.0000", correctedBy: reviewerUserId });
+      expect(total?.correctedAt).toBeInstanceOf(Date);
+      expect((await getDoc(id))?.status).toBe("approved");
+      expect((await getValidations(id)).some(v => v.status === "exception_accepted")).toBe(false);
       const conflict = (await getValidations(id)).find(v => v.ruleCode === "total_conflict");
-      expect(conflict).toMatchObject({ status: "exception_accepted", exceptionAcceptedBy: reviewerUserId });
+      expect(conflict).toBeUndefined();
+      expect(total?.isUncertain).toBe(false);
       expect((await getAudits(id)).filter(a => a.action === "document.approved")).toHaveLength(1);
       const exported = await app.inject({ method: "POST", url: `/organizations/${orgId}/exports`, headers: { cookie: adminCookie, "content-type": "application/json" }, payload: JSON.stringify({ documentIds: [id] }) });
       expect(exported.statusCode).toBe(201);
       const csv = await app.inject({ method: "GET", url: `/organizations/${orgId}/exports/${exported.json().id}/csv?file=main`, headers: { cookie: adminCookie } });
       expect(csv.statusCode).toBe(200);
       expect(csv.body).toContain("14000.0000");
+      const lines = await rawDb.select().from(schema.extractionLines).where(eq(schema.extractionLines.documentId, id));
+      expect(lines.filter(l => l.quantity === null && l.unitPrice === null)).toHaveLength(7);
     });
 
     it("coherencia 422: corrección sin reflejo en resueltos", async () => {

@@ -25,6 +25,7 @@ function baseTables(): Map<unknown, FakeRow[]> {
   const tables = new Map<unknown, FakeRow[]>([
     [schema.documents, []],
     [schema.documentFields, []],
+    [schema.documentValidations, []],
   ]);
   tables.get(schema.documents)?.push({
     id: DOC_1,
@@ -58,7 +59,16 @@ function baseTables(): Map<unknown, FakeRow[]> {
 }
 
 function asClient(fakeDb: ReturnType<typeof createFakeDb>) {
-  return fakeDb as unknown as CorrectionsDrizzleClient;
+  return {
+    ...fakeDb,
+    delete: (table: unknown) => ({
+      where: async (condition: unknown) => {
+        const selected = await fakeDb.select({ id: schema.documentValidations.id }).from(table).where(condition);
+        const ids = new Set(selected.map(row => row.id));
+        fakeDb.tables.set(table, (fakeDb.tables.get(table) ?? []).filter(row => !ids.has(row.id)));
+      },
+    }),
+  } as unknown as CorrectionsDrizzleClient;
 }
 
 describe("applyCorrections", () => {
@@ -175,5 +185,60 @@ describe("writeApprovedValues", () => {
     await expect(
       writer.writeApprovedValues("documento-inexistente"),
     ).rejects.toThrow(/inexistente/);
+  });
+});
+
+
+describe("resolución humana selectiva de total_conflict", () => {
+  const evidence = JSON.stringify([{ value: "7.000,00", page: 1 }, { value: "14000.0000", page: 2 }]);
+  function conflictTables(extractedValue: unknown = evidence) {
+    const tables = baseTables();
+    Object.assign(tables.get(schema.documentFields)!.find(f => f.fieldKey === "total_amount")!, {
+      extractedValue, isUncertain: true,
+    });
+    tables.get(schema.documentValidations)!.push({
+      id: "conflict", documentId: DOC_1, fieldKey: "total_amount",
+      ruleCode: "total_conflict", severity: "error", status: "active",
+    });
+    return tables;
+  }
+  it("retira solo el conflicto derivado activo, conserva evidencia y no acepta excepciones", async () => {
+    const tables = conflictTables();
+    const original = tables.get(schema.documentValidations)![0]!;
+    const others = [
+      { ...original, id: "other-rule", ruleCode: "unrelated" },
+      { ...original, id: "other-field", fieldKey: "currency" },
+      { ...original, id: "other-doc", documentId: "other" },
+      { ...original, id: "warning", severity: "warning" },
+      { ...original, id: "administrative", status: "exception_accepted", exceptionAcceptedBy: "admin" },
+    ];
+    tables.get(schema.documentValidations)!.push(...others);
+    await createCorrectionsWriter(asClient(createFakeDb(tables))).applyCorrections(
+      DOC_1, [{ fieldKey: "total_amount", correctedValue: "14000.00" }], "reviewer",
+    );
+    expect(tables.get(schema.documentValidations)).toEqual(others);
+    expect(tables.get(schema.documentFields)!.find(f => f.fieldKey === "total_amount")).toMatchObject({
+      extractedValue: evidence, correctedValue: "14000.00", correctedBy: "reviewer", isUncertain: false,
+    });
+  });
+  it.each([
+    null, "invalid", "[]", '[{"value":"invalid","page":1},{"value":"14000","page":2}]',
+    '[{"value":"7.000,00","page":1},{"value":"7000.0000","page":2}]',
+    '[{"value":"7000","page":0},{"value":"14000","page":2}]',
+  ])("evidencia inválida o sin contradicción no resuelve el bloqueo: %s", async extractedValue => {
+    const tables = conflictTables(extractedValue);
+    await createCorrectionsWriter(asClient(createFakeDb(tables))).applyCorrections(
+      DOC_1, [{ fieldKey: "total_amount", correctedValue: "14000.00" }], "reviewer",
+    );
+    expect(tables.get(schema.documentValidations)).toHaveLength(1);
+    expect(tables.get(schema.documentFields)!.find(f => f.fieldKey === "total_amount")?.isUncertain).toBe(true);
+  });
+  it("sin conflicto persistido no marca la evidencia como resuelta", async () => {
+    const tables = conflictTables();
+    tables.set(schema.documentValidations, []);
+    await createCorrectionsWriter(asClient(createFakeDb(tables))).applyCorrections(
+      DOC_1, [{ fieldKey: "total_amount", correctedValue: "14000.00" }], "reviewer",
+    );
+    expect(tables.get(schema.documentFields)!.find(f => f.fieldKey === "total_amount")?.isUncertain).toBe(true);
   });
 });

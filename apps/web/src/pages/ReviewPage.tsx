@@ -100,12 +100,10 @@ export function ReviewPage() {
       jobs.find((job) => job.lastError !== null)?.lastError ?? null;
     const decision = decisions.length > 0 ? decisions[decisions.length - 1] : null;
     return (
-      <ReviewStates
-        document={document}
-        orgId={orgId}
-        lastError={lastError}
-        decision={decision ?? undefined}
-      />
+      <div>
+        <ReviewStates document={document} orgId={orgId} lastError={lastError} decision={decision ?? undefined} />
+        {status === "approved" ? <ReviewFields fields={fields.filter(f => f.fieldKey === "total_amount" && f.extractedValue?.startsWith("["))} pending={[]} onChange={() => {}} readOnly /> : null}
+      </div>
     );
   }
 
