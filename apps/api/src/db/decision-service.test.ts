@@ -332,3 +332,121 @@ describe("decide — rechazos (M-01, negativas)", () => {
     expect(state.decisions).toHaveLength(1);
   });
 });
+
+
+describe("decide — coherencia decimal exacta de total_amount", () => {
+  const input = {
+    organizationId: ORG_A,
+    documentId: DOC_1,
+    actorUserId: ADMIN_A,
+    decision: "approved" as const,
+  };
+
+  it.each([
+    ["18150.0000", "18150.00"],
+    ["18150", "18150.0000"],
+    ["00018150.0000", "18150.00"],
+    ["000.0100", "0.01"],
+    ["-18150.0000", "-0018150.00"],
+    ["-0.0000", "0"],
+    ["0000", "-000.00"],
+    ["999999999999999.9999", "0999999999999999.9999"],
+    ["-999999999999999.9999", "-0999999999999999.9999"],
+  ])("aprueba importes equivalentes %s / %s", async (resolved, corrected) => {
+    const { deps, state } = makeDeps({
+      doc: baseDoc({
+        resolvedValues: { total_amount: resolved },
+        corrections: [{ fieldKey: "total_amount", correctedValue: corrected }],
+      }),
+    });
+    expect((await decide(deps, input)).status).toBe("approved");
+    expect(state.documents.get(DOC_1)?.status).toBe("approved");
+    expect(state.decisions).toHaveLength(1);
+    expect(state.audits).toHaveLength(1);
+    expect(state.audits[0]?.details).toEqual({
+      decision: "approved", has_corrections: true,
+    });
+  });
+
+  it.each([
+    ["18150.0000", "18150.01"],
+    ["18150.0000", "18150.0001"],
+    ["-18150.0000", "-18150.0001"],
+    ["-1", "1"],
+    ["999999999999999.9999", "999999999999999.9998"],
+    ["999999999999999.9900", "999999999999999.9800"],
+    [null, "0"],
+    [undefined, "0"],
+  ])("rechaza desajuste o ausencia %s / %s sin escrituras", async (resolved, corrected) => {
+    const { deps, state } = makeDeps({
+      doc: baseDoc({
+        resolvedValues: resolved === undefined ? {} : { total_amount: resolved },
+        corrections: [{ fieldKey: "total_amount", correctedValue: corrected }],
+      }),
+    });
+    const before = structuredClone(state);
+    await expect(decide(deps, input)).rejects.toBeInstanceOf(DecisionIncoherentError);
+    expect(state).toEqual(before);
+  });
+
+  it.each([
+    "", " ", "18150.00 ", "18150.00\n", "1,00", "18,150.00",
+    "18.150,00", "1e2", "NaN", "Infinity", "+1", ".1", "1.",
+    "1.00000", "1000000000000000", "-1000000000000000", "--1",
+  ])("falla cerrado ante formato o precisión inválidos: %j", async (invalid) => {
+    // Un inválido en cualquiera de los lados, incluso dos idénticos,
+    // debe rechazar: dos fallos de parseo nunca constituyen igualdad.
+    for (const [resolved, corrected] of [[invalid, invalid], [invalid, "0"], ["0", invalid]]) {
+      const { deps, state } = makeDeps({
+        doc: baseDoc({
+          resolvedValues: { total_amount: resolved },
+          corrections: [{ fieldKey: "total_amount", correctedValue: corrected }],
+        }),
+      });
+      const before = structuredClone(state);
+      await expect(decide(deps, input)).rejects.toBeInstanceOf(DecisionIncoherentError);
+      expect(state).toEqual(before);
+    }
+  });
+
+  it.each([null, undefined])("rechaza corrección ausente %s incluso con resuelto ausente", async (missing) => {
+    for (const resolved of [null, undefined, "0"]) {
+      const { deps, state } = makeDeps({
+        doc: baseDoc({
+          resolvedValues: resolved === undefined ? {} : { total_amount: resolved },
+          // Simula datos corruptos en el puerto: no solo peticiones validadas.
+          corrections: [{ fieldKey: "total_amount", correctedValue: missing as unknown as string }],
+        }),
+      });
+      const before = structuredClone(state);
+      await expect(decide(deps, input)).rejects.toBeInstanceOf(DecisionIncoherentError);
+      expect(state).toEqual(before);
+    }
+  });
+
+  it.each(["supplier_name", "supplier_tax_id", "invoice_number", "issue_date", "currency"])(
+    "conserva igualdad estricta para %s", async (fieldKey) => {
+      for (const [resolved, corrected, equal] of [
+        ["18150.0000", "18150.00", false],
+        ["001", "1", false],
+        ["ARS", "ars", false],
+        ["valor", "valor ", false],
+        ["valor", "valor", true],
+      ] as const) {
+        const { deps, state } = makeDeps({
+          doc: baseDoc({
+            resolvedValues: { [fieldKey]: resolved },
+            corrections: [{ fieldKey, correctedValue: corrected }],
+          }),
+        });
+        if (equal) {
+          expect((await decide(deps, input)).status).toBe("approved");
+        } else {
+          const before = structuredClone(state);
+          await expect(decide(deps, input)).rejects.toBeInstanceOf(DecisionIncoherentError);
+          expect(state).toEqual(before);
+        }
+      }
+    },
+  );
+});
