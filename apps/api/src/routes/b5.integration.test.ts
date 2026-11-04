@@ -3,17 +3,17 @@
  * local real y Better Auth real.
  *
  * REQUISITOS (los prepara el agente, no el test):
- * - Base desechable `docflow_test_b5` creada y migrada (0000+0001).
- * - Variables de entorno: DATABASE_URL (a docflow_test_b5),
+ * - Base desechable `docflow_dev` local, sintética y migrada (0000+0001+0002).
+ * - Variables de entorno: DATABASE_URL (a docflow_dev local),
  *   BETTER_AUTH_SECRET, BETTER_AUTH_URL, WEB_TRUSTED_ORIGINS.
  * - Flag `DOCFLOW_B5_TEST=1`: sin él, toda la suite se saltea.
  *
  * El procesamiento se invoca directamente con `processNext`
  * (no el bucle). Cada caso usa una organización nueva para que
- * los candidatos no se crucen. El rollback transaccional NO se
- * prueba aquí (no hay punto de inyección para romper la
- * auditoría a través de la app real): está cubierto a nivel de
- * servicio/orquestador con fakes.
+ * los candidatos no se crucen. La incoherencia decimal prueba rollback
+ * transaccional real. El fallo inyectado de auditoría sigue cubierto
+ * a nivel de servicio/orquestador con fakes (no hay punto de inyección
+ * para romper la auditoría a través de la app real).
  */
 
 import { mkdtemp, rm } from "node:fs/promises";
@@ -21,12 +21,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
 import * as authTables from "../auth/tables.js";
 import * as schema from "../db/schema.js";
+import { assertNoConflictingEnv, assertSeedTarget } from "../db/seed-guard.js";
+import { verifyLocalConnection } from "../db/verify-connection.js";
 import { detectDuplicates } from "../services/duplicate-detection-b.js";
 import {
   selectStubFixtureIndex,
@@ -409,8 +411,17 @@ describe.skipIf(!process.env.DOCFLOW_B5_TEST)(
     }
 
     beforeAll(async () => {
+      const connectionString = process.env.DATABASE_URL;
+      if (!connectionString) throw new Error("B5: falta DATABASE_URL local");
+      assertSeedTarget(connectionString);
+      assertNoConflictingEnv();
       const instance = await import("../auth/instance.js");
       rawDb = instance.db;
+      await verifyLocalConnection(async () => {
+        const result = await rawDb.execute(sql`SELECT current_database() AS database, inet_server_addr() AS server_addr`);
+        const row = result.rows[0];
+        return { database: row?.database, serverAddr: row?.server_addr };
+      }, connectionString);
       closePool = () => instance.pool.end();
       storageDir = await mkdtemp(join(tmpdir(), "docflow-b5-storage-"));
       storage = createLocalStorage({
@@ -617,6 +628,93 @@ describe.skipIf(!process.env.DOCFLOW_B5_TEST)(
       expect(supplier?.["correctedValue"]).toBe("Nuevo Proveedor SA");
       expect(supplier?.["approvedValue"]).toBe("Nuevo Proveedor SA");
     });
+
+    // Fixture directa de revisión: prueba NUMERIC real sin extracción ni red.
+    async function decimalReviewDoc(organizationId: string): Promise<string> {
+      const [doc] = await rawDb.insert(schema.documents).values({
+        organizationId, fileName: "decimal-sintetico.pdf", fileHash: "d".repeat(64),
+        mimeType: "application/pdf", sizeBytes: 100, status: "needs_review",
+        supplierName: "Proveedor Sintético", supplierTaxId: "30123456789",
+        invoiceNumber: "001100004201", issueDate: new Date("2026-10-31T00:00:00Z"),
+        currency: "ARS", totalAmount: "18150.00",
+      }).returning({ id: schema.documents.id });
+      expect(doc).toBeDefined();
+      const id = doc!.id;
+      const values = {
+        supplier_name: "Proveedor Sintético", supplier_tax_id: "30123456789",
+        invoice_number: "001100004201", issue_date: "2026-10-31",
+        currency: "ARS", total_amount: "18150.00",
+      };
+      await rawDb.insert(schema.documentFields).values(
+        Object.entries(values).map(([fieldKey, value]) => ({
+          documentId: id, fieldKey, extractedValue: value, normalizedValue: value,
+          source: "fixture", confidence: "1.0000", isMissing: false, isUncertain: false,
+        })),
+      );
+      return id;
+    }
+
+    it.each(["persistida", "en petición"])(
+      "decimal NUMERIC: aprueba corrección de dos decimales %s tras releer cuatro", async (mode) => {
+        const orgId = await createOrg(`Org B5 decimal ${mode}`);
+        const id = await decimalReviewDoc(orgId);
+        const correction = { fieldKey: "total_amount", correctedValue: "18150.00" };
+        if (mode === "persistida") {
+          await rawDb.update(schema.documentFields).set({ correctedValue: correction.correctedValue })
+            .where(and(eq(schema.documentFields.documentId, id), eq(schema.documentFields.fieldKey, "total_amount")));
+          expect((await getFields(id)).find(f => f.fieldKey === "total_amount")?.correctedValue).toBe("18150.00");
+        }
+        expect((await getDoc(id))?.totalAmount).toBe("18150.0000");
+        const res = await decide(adminCookie, orgId, id, {
+          decision: "approved", corrections: mode === "en petición" ? [correction] : [],
+        });
+        expect(res.statusCode).toBe(200);
+        const doc = await getDoc(id);
+        expect(doc?.status).toBe("approved");
+        expect(doc?.totalAmount).toBe("18150.0000");
+        const actorId = await userIdByEmail(ADMIN_EMAIL);
+        const decisions = await getDecisions(id);
+        expect(decisions).toHaveLength(1);
+        expect(decisions[0]).toMatchObject({ documentId: id, decidedBy: actorId, decision: "approved" });
+        expect(decisions[0]?.decidedAt).toBeInstanceOf(Date);
+        const fields = await getFields(id);
+        expect(fields).toHaveLength(6);
+        expect(fields.find(f => f.fieldKey === "total_amount")).toMatchObject({
+          correctedValue: "18150.00", approvedValue: "18150.0000",
+        });
+        const approved = Object.fromEntries(fields.map(f => [f.fieldKey, f.approvedValue]));
+        expect(approved).toEqual({
+          supplier_name: doc?.supplierName, supplier_tax_id: doc?.supplierTaxId,
+          invoice_number: doc?.invoiceNumber, issue_date: "2026-10-31",
+          currency: doc?.currency, total_amount: doc?.totalAmount,
+        });
+        const audits = await getAudits(id);
+        expect(audits.filter(a => a.action === "document.approved")).toHaveLength(1);
+        expect(audits.find(a => a.action === "document.approved")).toMatchObject({
+          organizationId: orgId, actorId, entityId: id,
+          detailsJson: { decision: "approved", has_corrections: true },
+        });
+      },
+    );
+
+    it.each(["18150.01", "18150.0001"])(
+      "decimal NUMERIC: desajuste real %s devuelve 422 y revierte toda escritura", async (correctedValue) => {
+        const orgId = await createOrg(`Org B5 decimal desajuste ${correctedValue}`);
+        const id = await decimalReviewDoc(orgId);
+        await rawDb.update(schema.documentFields).set({ correctedValue })
+          .where(and(eq(schema.documentFields.documentId, id), eq(schema.documentFields.fieldKey, "total_amount")));
+        const before = { doc: await getDoc(id), fields: await getFields(id), audits: await getAudits(id) };
+        const res = await decide(adminCookie, orgId, id, {
+          decision: "approved", corrections: [{ fieldKey: "currency", correctedValue: "USD" }],
+        });
+        expect(res.statusCode).toBe(422);
+        expect(res.json()).toMatchObject({ error: "decision_incoherent" });
+        expect(await getDoc(id)).toEqual(before.doc);
+        expect(await getFields(id)).toEqual(before.fields);
+        expect(await getAudits(id)).toEqual(before.audits);
+        expect(await getDecisions(id)).toHaveLength(0);
+      },
+    );
 
     it("coherencia 422: corrección sin reflejo en resueltos", async () => {
       const orgId = await createOrg("Org B5 coherencia");

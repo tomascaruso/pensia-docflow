@@ -147,6 +147,19 @@ export interface DecideResult {
   decidedAt?: string;
 }
 
+/** Decimal plano de NUMERIC(19,4), exacto en unidades de 0,0001.
+ * No admite formatos alternativos ni redondea exceso de escala/precisión.
+ */
+function exactAmount(value: string | null | undefined): bigint | null {
+  if (typeof value !== "string") return null;
+  const match = /^(-?)(\d+)(?:\.(\d{1,4}))?$/.exec(value);
+  if (match === null || match[0] !== value) return null;
+  const whole = match[2].replace(/^0+/, "") || "0";
+  if (whole.length > 15) return null;
+  const scaled = BigInt(whole) * 10_000n + BigInt((match[3] ?? "").padEnd(4, "0"));
+  return match[1] === "-" ? -scaled : scaled;
+}
+
 /**
  * Decide un documento en `needs_review`. El estado resultante se
  * deriva de la decisión (approved → approved, rejected → rejected);
@@ -180,7 +193,13 @@ export async function decide(
   }
   if (input.decision === "approved") {
     for (const correction of doc.corrections) {
-      if (doc.resolvedValues[correction.fieldKey] !== correction.correctedValue) {
+      const resolved = doc.resolvedValues[correction.fieldKey];
+      const currentAmount = correction.fieldKey === "total_amount" ? exactAmount(resolved) : null;
+      const correctedAmount = correction.fieldKey === "total_amount" ? exactAmount(correction.correctedValue) : null;
+      const reflected = correction.fieldKey === "total_amount"
+        ? currentAmount !== null && correctedAmount !== null && currentAmount === correctedAmount
+        : resolved === correction.correctedValue;
+      if (!reflected) {
         throw new DecisionIncoherentError(
           `el valor actual de ${correction.fieldKey} no refleja la corrección aprobada.`,
         );
