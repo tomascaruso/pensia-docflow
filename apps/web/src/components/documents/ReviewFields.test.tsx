@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DocumentField } from "@pensia-docflow/shared";
-import { ReviewFields } from "./ReviewFields";
+import { ReviewFields, currentFieldValue } from "./ReviewFields";
 
 afterEach(() => {
   cleanup();
@@ -120,4 +120,11 @@ describe("ReviewFields", () => {
       }),
     ).toBeDisabled();
   });
+});
+
+it("total en centavos se muestra en unidades exactas, sin flotantes", () => {
+ expect(currentFieldValue(field({ fieldKey: "total_amount", normalizedValue: "1815000" }))).toBe("18150.00");
+ expect(currentFieldValue(field({ fieldKey: "total_amount", normalizedValue: "99999999999999999" }))).toBe("999999999999999.99");
+ expect(currentFieldValue(field({ fieldKey: "total_amount", normalizedValue: "-1" }))).toBe("-0.01");
+ expect(currentFieldValue(field({ fieldKey: "total_amount", isUncertain: true, extractedValue: "conflict", normalizedValue: null }))).toBe("");
 });

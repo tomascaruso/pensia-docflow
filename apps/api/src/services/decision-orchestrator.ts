@@ -273,6 +273,10 @@ export async function decideWithOrchestration(
     );
     const blockingValidations: BlockingValidation[] = [];
     for (const row of rows) {
+      // Only this server-persisted conflict may be resolved by an explicit,
+      // format-validated total correction. All other blockers remain enforced.
+      if (row.ruleCode === "total_conflict" && row.fieldKey === "total_amount" &&
+          corrections.some(c => c.fieldKey === "total_amount")) continue;
       if (
         row.ruleCode === "duplicate_business_exact" ||
         row.ruleCode === "duplicate_business_probable"

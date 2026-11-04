@@ -1,3 +1,4 @@
+import { parseDecimalScaled } from "./validation-service.js";
 /**
  * DocFlow B7b — Proveedor OpenAI GPT-4o mini (producción).
  *
@@ -399,6 +400,16 @@ export function createOpenAiExtractionProvider(
       costByFileKey[input.fileKey] = (costByFileKey[input.fileKey] ?? 0) + cost;
       totalCost += cost;
       const field = (key: FieldKey): RawExtractionField => {
+        if (key === "total_amount") {
+          const values = parsedPages.flatMap((p, i) => p.total_amount === null ? [] : [{ value: p.total_amount, page: i + 1 }]);
+          if (values.length > 1) {
+            const amounts = values.map(v => parseDecimalScaled(v.value));
+            if (amounts.some(v => v === null)) throw new Error("Total multipágina inválido.");
+            if (amounts.some(v => v !== amounts[0])) {
+              return { key, rawValue: null, confidence: null, page: null, boundingBox: null, conflictingValues: values };
+            }
+          }
+        }
         for (let i = 0; i < parsedPages.length; i++) {
           const value = parsedPages[i][key];
           if (value !== null) {

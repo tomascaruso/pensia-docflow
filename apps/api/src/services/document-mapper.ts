@@ -68,6 +68,7 @@ export type DocumentFieldKey = (typeof FIELD_KEYS)[number];
 
 export interface MappedField {
   fieldKey: DocumentFieldKey;
+  totalConflict?: boolean;
   extractedValue: string | null;
   normalizedValue: string | null;
   confidence: number | null;
@@ -172,7 +173,9 @@ export function mapExtraction(
 
   const fields: MappedField[] = FIELD_KEYS.map((key) => {
     const raw = byKey.get(key);
-    const extractedValue =
+    const conflict = key === "total_amount" && raw?.conflictingValues && raw.conflictingValues.length > 1
+      ? raw.conflictingValues : null;
+    const extractedValue = conflict ? JSON.stringify(conflict) :
       raw === undefined ? null : asNullableString(raw.rawValue, key);
     let confidence: number | null = null;
     if (raw !== undefined && raw.confidence !== null) {
@@ -200,11 +203,12 @@ export function mapExtraction(
     return {
       fieldKey: key,
       extractedValue,
-      normalizedValue: normalizeField(key, extractedValue),
+      normalizedValue: conflict ? null : normalizeField(key, extractedValue),
       confidence,
       source: providerName,
       isMissing: extractedValue === null,
-      isUncertain: false,
+      isUncertain: !!conflict,
+      ...(conflict ? { totalConflict: true } : {}),
       pageNumber,
     };
   });
@@ -234,7 +238,7 @@ export function mapExtraction(
     issueDate:
       issueDateIso === null ? null : new Date(`${issueDateIso}T00:00:00.000Z`),
     currency: byKeyValue("currency"),
-    totalAmount: byKeyValue("total_amount"),
+    totalAmount: fields.some(f => f.totalConflict) ? null : byKeyValue("total_amount"),
   };
 
   // B7c: la clave de negocio usa el total normalizado (con punto),

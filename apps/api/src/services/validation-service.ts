@@ -40,6 +40,7 @@
  */
 
 export interface ValidationInputField {
+  totalConflict?: boolean;
   fieldKey: string;
   normalizedValue: string | null;
   confidence: number | null;
@@ -138,6 +139,9 @@ export function validateDocument(
 ): ValidationRow[] {
   const rows: ValidationRow[] = [];
   const { fields, lines, resolved } = input;
+
+  const conflict = fields.find(f => f.fieldKey === "total_amount" && f.totalConflict);
+  if (conflict) rows.push({ ruleCode: "total_conflict", severity: "error", fieldKey: "total_amount", status: "active", message: "Totales contradictorios entre páginas. Revisá el original e ingresá explícitamente el total." });
 
   for (const key of MANDATORY_FIELDS) {
     const field = fieldByKey(fields, key);
@@ -248,7 +252,7 @@ export function validateDocument(
 
   for (const key of MANDATORY_FIELDS) {
     const field = fieldByKey(fields, key);
-    if (field === undefined || field.isMissing) {
+    if (field === undefined || field.isMissing || field.totalConflict) {
       continue;
     }
     if (

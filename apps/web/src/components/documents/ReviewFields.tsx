@@ -15,9 +15,16 @@ export interface ReviewFieldsProps {
 
 /** Valor vigente de un campo: corrección > normalizado > extraído. */
 export function currentFieldValue(field: DocumentField): string {
-  return (
-    field.correctedValue ?? field.normalizedValue ?? field.extractedValue ?? ""
-  );
+  if (field.correctedValue !== null) return field.correctedValue;
+  if (field.fieldKey === "total_amount") {
+    if (field.isUncertain) return "";
+    if (field.normalizedValue !== null && /^-?\d+$/.test(field.normalizedValue)) {
+      const cents = BigInt(field.normalizedValue), abs = cents < 0n ? -cents : cents;
+      return `${cents < 0n ? "-" : ""}${abs / 100n}.${String(abs % 100n).padStart(2, "0")}`;
+    }
+    return field.extractedValue ?? "";
+  }
+  return field.normalizedValue ?? field.extractedValue ?? "";
 }
 
 /**
@@ -82,6 +89,7 @@ export function ReviewFields({
                 Revisar este campo
               </p>
             ) : null}
+            {field.fieldKey === "total_amount" && field.isUncertain ? <p role="alert">Conflicto de totales por página: {field.extractedValue}. Revisá el original e ingresá el total; no se seleccionó ningún importe.</p> : null}
             {isPending ? <p>Corregido</p> : null}
             <Input
               id={field.fieldKey}
@@ -96,7 +104,7 @@ export function ReviewFields({
             />
             <p>
               Extraído: {field.extractedValue ?? "—"} · Normalizado:{" "}
-              {field.normalizedValue ?? "—"} · Procedencia: {field.source}
+              {field.fieldKey === "total_amount" ? (currentFieldValue({ ...field, correctedValue: null }) || "—") : (field.normalizedValue ?? "—")} · Procedencia: {field.source}
               {field.pageNumber !== null
                 ? ` · Página ${field.pageNumber}`
                 : ""}

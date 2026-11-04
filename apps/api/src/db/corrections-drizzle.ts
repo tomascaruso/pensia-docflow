@@ -134,7 +134,7 @@ export function createCorrectionsWriter(db: CorrectionsDrizzleClient) {
           );
         }
         const fieldRows = await db
-          .select({ id: schema.documentFields.id })
+          .select({ id: schema.documentFields.id, isUncertain: schema.documentFields.isUncertain })
           .from(schema.documentFields)
           .where(
             and(
@@ -176,6 +176,14 @@ export function createCorrectionsWriter(db: CorrectionsDrizzleClient) {
           next.currency = correction.correctedValue;
         } else if (correction.fieldKey === "total_amount") {
           next.totalAmount = correction.correctedValue;
+          if (fieldRows[0]?.isUncertain === true) await db.update(schema.documentValidations).set({
+            status: "exception_accepted",
+            exceptionJustification: "Conflicto resuelto mediante corrección humana explícita del total.",
+            exceptionAcceptedBy: actorUserId, exceptionAcceptedAt: now,
+          }).where(and(eq(schema.documentValidations.documentId, documentId),
+            eq(schema.documentValidations.ruleCode, "total_conflict"),
+            eq(schema.documentValidations.fieldKey, "total_amount"),
+            eq(schema.documentValidations.status, "active")));
         }
       }
       const businessKey = buildBusinessKey({

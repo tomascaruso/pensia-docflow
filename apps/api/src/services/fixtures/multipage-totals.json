@@ -1,0 +1,143 @@
+{
+  "provenance": "Real OpenAI responses for synthetic directed-multipage-14-v1; local replay only",
+  "source_sha256": [
+    "d547dad32ef3cfb4e6219340c4c28699c7b646c8902b815f7954e649dc5faf74",
+    "34ae8da70c1c38f00678a9fe5b5f95e8adb2b4d52a5e3b7de9f627e43898851c"
+  ],
+  "pages": [
+    {
+      "supplier_name": "Gráfica del oeste S.R.L.",
+      "supplier_tax_id": "30-12345679-0",
+      "invoice_number": "0001-00009999",
+      "issue_date": "2026-05-30",
+      "currency": "ARS",
+      "total_amount": "7000.00",
+      "line_items": [
+        {
+          "line_number": 1,
+          "description": "Item 1",
+          "quantity": "1",
+          "unit_price": "1000.00",
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 2,
+          "description": "Item 2",
+          "quantity": "1",
+          "unit_price": "1000.00",
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 3,
+          "description": "Item 3",
+          "quantity": "1",
+          "unit_price": "1000.00",
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 4,
+          "description": "Item 4",
+          "quantity": "1",
+          "unit_price": "1000.00",
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 5,
+          "description": "Item 5",
+          "quantity": "1",
+          "unit_price": "1000.00",
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 6,
+          "description": "Item 6",
+          "quantity": "1",
+          "unit_price": "1000.00",
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 7,
+          "description": "Item 7",
+          "quantity": "1",
+          "unit_price": "1000.00",
+          "line_total": "1000.00"
+        }
+      ],
+      "confidence": {
+        "supplier_name": 1,
+        "supplier_tax_id": 1,
+        "invoice_number": 1,
+        "issue_date": 1,
+        "currency": 1,
+        "total_amount": 1
+      }
+    },
+    {
+      "supplier_name": null,
+      "supplier_tax_id": null,
+      "invoice_number": null,
+      "issue_date": null,
+      "currency": null,
+      "total_amount": "14000.00",
+      "line_items": [
+        {
+          "line_number": 8,
+          "description": "Item 8",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 9,
+          "description": "Item 9",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 10,
+          "description": "Item 10",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 11,
+          "description": "Item 11",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 12,
+          "description": "Item 12",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 13,
+          "description": "Item 13",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "1000.00"
+        },
+        {
+          "line_number": 14,
+          "description": "Item 14",
+          "quantity": null,
+          "unit_price": null,
+          "line_total": "1000.00"
+        }
+      ],
+      "confidence": {
+        "supplier_name": null,
+        "supplier_tax_id": null,
+        "invoice_number": null,
+        "issue_date": null,
+        "currency": null,
+        "total_amount": 1
+      }
+    }
+  ]
+}
