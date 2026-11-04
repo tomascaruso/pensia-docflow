@@ -403,7 +403,14 @@ export interface ResolveResponse {
   resolvedAt: string;
 }
 
+export interface ExportPrepareResponse {
+  id: string;
+  status: "completed";
+  completedAt: string | null;
+}
+
 export interface ExportCreateResponse {
+  completedAt?: string | null;
   id: string;
   documentCount: number;
   status: ExportStatus;

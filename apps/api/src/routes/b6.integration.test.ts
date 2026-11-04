@@ -1,3 +1,5 @@
+import { Client } from "pg";
+import * as auditWriterModule from "../db/audit-writer.js";
 import { AuditSensitiveDetailsError } from "../db/audit-writer.js";
 import { createExport } from "../db/export-service.js";
 import { createExportServiceDeps } from "../db/export-drizzle.js";
@@ -27,7 +29,7 @@ import type { FastifyInstance } from "fastify";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq, sql } from "drizzle-orm";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../app.js";
 import * as authTables from "../auth/tables.js";
 import * as schema from "../db/schema.js";
@@ -507,6 +509,135 @@ describe.skipIf(!process.env.DOCFLOW_B6_TEST)(
       expect(beyond.json().documents[0].supplierName).toBe("Final único");
     });
 
+    it.each([false, true])("F11b: revocación confirmada mientras prepare espera la fila (auditoría falla=%s)", async auditFails => {
+      const orgId = await createOrg("F11b revocación en espera");
+      await addReviewer(orgId);
+      const grant = await app.inject({ method: "POST", url: `/organizations/${orgId}/grants`, headers: { cookie: adminCookie }, payload: { userId: reviewerUserId, permissionKey: "export_documents" } });
+      expect(grant.statusCode).toBe(201);
+      const [doc] = await rawDb.insert(schema.documents).values({ organizationId: orgId, fileName: "race.pdf", fileHash: "a".repeat(64), mimeType: "application/pdf", sizeBytes: 100, status: "approved" }).returning({ id: schema.documents.id });
+      const [exp] = await rawDb.insert(schema.exports).values({ organizationId: orgId, requestedBy: reviewerUserId, documentCount: 1 }).returning();
+      await rawDb.insert(schema.exportItems).values({ exportId: exp.id, documentId: doc.id });
+      const originalWriter = auditWriterModule.writeAuditEvent;
+      const denialSpy = vi.spyOn(auditWriterModule, "writeAuditEvent").mockImplementation((deps, event) => originalWriter(deps,
+        auditFails && event.action === "export.prepare_denied" ? { ...event, details: { supplier_name: "Dato prohibido" } } : event));
+      const lock = new Client({ connectionString: process.env.DATABASE_URL });
+      await lock.connect();
+      let response: Promise<Awaited<ReturnType<typeof app.inject>>> | undefined;
+      try {
+        await lock.query("BEGIN");
+        const pid = (await lock.query("SELECT pg_backend_pid() AS pid")).rows[0].pid as number;
+        await lock.query("SELECT id FROM exports WHERE id=$1 AND organization_id=$2 FOR UPDATE", [exp.id, orgId]);
+        let settled = false;
+        response = Promise.resolve(app.inject({ method: "POST", url: `/organizations/${orgId}/exports/${exp.id}/prepare`, headers: { cookie: reviewerCookie }, payload: {} }));
+        void response.then(() => { settled = true; });
+        const deadline = Date.now() + 2000;
+        let waiter: { pid: number; wait_event_type: string; query: string } | undefined;
+        while (Date.now() < deadline && !settled) {
+          await lock.query("SELECT pg_stat_clear_snapshot()");
+          waiter = (await lock.query("SELECT pid,wait_event_type,query FROM pg_stat_activity WHERE $1::int=ANY(pg_blocking_pids(pid)) AND wait_event_type='Lock'", [pid])).rows[0];
+          if (waiter && waiter.query.includes('from "exports"') && waiter.query.includes("for update")) break;
+          waiter = undefined;
+          await new Promise<void>(resolve => setImmediate(resolve));
+        }
+        expect(waiter, "HTTP superó autorización inicial y espera nuestro bloqueo").toBeDefined();
+        console.info("REVOCATION_WAIT", JSON.stringify({ blocker: pid, waiter }));
+        const revoked = await app.inject({ method: "POST", url: `/organizations/${orgId}/grants/${grant.json().id}/revoke`, headers: { cookie: adminCookie } });
+        expect(revoked.statusCode).toBe(200);
+        const committed = (await lock.query("SELECT revoked_at IS NOT NULL AS revoked FROM member_permissions WHERE id=$1", [grant.json().id])).rows[0];
+        expect(committed.revoked).toBe(true);
+        console.info("REVOCATION_COMMITTED", JSON.stringify(committed));
+        await lock.query("ROLLBACK"); // Libera sin UPDATE: no ocultar snapshot antiguo con 40001.
+        const res = await response;
+        const after = await getExportRow(exp.id);
+        const events = (await getAuditsByOrg(orgId)).filter(e => ["export.completed", "export.prepare_denied", "export.generation_failed"].includes(e.action));
+        console.info("REVOCATION_RESULT", JSON.stringify({ status: res.statusCode, original: exp, after, events }));
+        expect(res.statusCode).toBe(403);
+        expect(after).toEqual(exp);
+        expect(events.map(e => e.action)).toEqual(auditFails ? [] : ["export.prepare_denied"]);
+        const preHandler = await app.inject({ method: "POST", url: `/organizations/${orgId}/exports/${exp.id}/prepare`, headers: { cookie: reviewerCookie }, payload: {} });
+        expect(preHandler.statusCode).toBe(403);
+        const afterSecond = await getAuditsByOrg(orgId);
+        expect(afterSecond.filter(e => e.action === "export.prepare_denied")).toHaveLength(auditFails ? 0 : 2);
+        expect(afterSecond.filter(e => ["export.completed", "export.generation_failed"].includes(e.action))).toHaveLength(0);
+        expect(await getExportRow(exp.id)).toEqual(exp);
+      } finally {
+        await lock.query("ROLLBACK"); await lock.end();
+        await response; denialSpy.mockRestore();
+      }
+    });
+
+    it("F11b: creación, reloj PostgreSQL, rollback real, históricos y concurrencia", async () => {
+      const orgId = await createOrg("F11b ciclo");
+      const owner = await userIdByEmail(ADMIN_EMAIL);
+      const [doc] = await rawDb.insert(schema.documents).values({ organizationId: orgId, fileName: "ciclo.pdf", fileHash: "e".repeat(64), mimeType: "application/pdf", sizeBytes: 100, status: "approved" }).returning({ id: schema.documents.id });
+      const [before] = await rawDb.select({ time: sql<Date>`clock_timestamp()` }).from(schema.documents).where(eq(schema.documents.id, doc.id));
+      const created = await postExport(adminCookie, orgId, { documentIds: [doc.id] });
+      expect(created.statusCode).toBe(201);
+      const result = created.json() as { id: string; status: string; completedAt: string };
+      expect(result.status).toBe("completed");
+      expect(new Date(result.completedAt).getTime()).toBeGreaterThanOrEqual(new Date(before.time).getTime());
+      expect((await getAuditsByOrg(orgId)).filter(e => e.action === "export.completed")).toHaveLength(1);
+      expect((await getAuditsByOrg(orgId)).filter(e => e.action === "export.downloaded")).toHaveLength(0);
+      await rawDb.insert(schema.extractionLines).values({ documentId: doc.id, lineNumber: 1, description: "x".repeat(5000) });
+      const priorBudget = process.env.DOCFLOW_CSV_MAX_BYTES;
+      try {
+        process.env.DOCFLOW_CSV_MAX_BYTES = "4096";
+        expect((await postExport(adminCookie, orgId, { documentIds: [doc.id] })).statusCode).toBe(413);
+        expect(await rawDb.select().from(schema.exports).where(eq(schema.exports.organizationId, orgId))).toHaveLength(1);
+        expect((await getAuditsByOrg(orgId)).filter(e => e.action === "export.created")).toHaveLength(1);
+      } finally {
+        if (priorBudget === undefined) delete process.env.DOCFLOW_CSV_MAX_BYTES; else process.env.DOCFLOW_CSV_MAX_BYTES = priorBudget;
+        await rawDb.delete(schema.extractionLines).where(eq(schema.extractionLines.documentId, doc.id));
+      }
+      const originalWriter = auditWriterModule.writeAuditEvent;
+      const spy = vi.spyOn(auditWriterModule, "writeAuditEvent").mockImplementation((deps, event) => originalWriter(deps,
+        event.action === "export.completed" ? { ...event, details: { supplier_name: "Dato prohibido" } } : event));
+      try {
+        expect((await postExport(adminCookie, orgId, { documentIds: [doc.id] })).statusCode).toBe(500);
+        expect(await rawDb.select().from(schema.exports).where(eq(schema.exports.organizationId, orgId))).toHaveLength(1);
+        expect((await getAuditsByOrg(orgId)).filter(e => e.action === "export.created")).toHaveLength(1);
+      } finally { spy.mockRestore(); }
+      const [historical] = await rawDb.insert(schema.exports).values({ organizationId: orgId, requestedBy: owner, documentCount: 1 }).returning({ id: schema.exports.id });
+      await rawDb.insert(schema.exportItems).values({ exportId: historical.id, documentId: doc.id });
+      const prepare = () => app.inject({ method: "POST", url: `/organizations/${orgId}/exports/${historical.id}/prepare`, headers: { cookie: adminCookie }, payload: {} });
+      await rawDb.update(schema.documents).set({ status: "needs_review" }).where(eq(schema.documents.id, doc.id));
+      expect((await prepare()).statusCode).toBe(409);
+      expect((await getExportRow(historical.id))?.status).toBe("failed");
+      // El escritor real rechaza detalles prohibidos: también revierte failed.
+      const failSpy = vi.spyOn(auditWriterModule, "writeAuditEvent").mockImplementation((deps, event) => originalWriter(deps,
+        event.action === "export.generation_failed" ? { ...event, details: { supplier_name: "Dato prohibido" } } : event));
+      try {
+        expect((await prepare()).statusCode).toBe(500);
+        expect((await getExportRow(historical.id))?.status).toBe("failed");
+        expect((await getAuditsByOrg(orgId)).filter(e => e.action === "export.generation_failed")).toHaveLength(1);
+      } finally { failSpy.mockRestore(); }
+      await addReviewer(orgId);
+      const grant = await app.inject({ method: "POST", url: `/organizations/${orgId}/grants`, headers: { cookie: adminCookie }, payload: { userId: reviewerUserId, permissionKey: "export_documents" } });
+      expect(grant.statusCode).toBe(201);
+      expect((await app.inject({ method: "POST", url: `/organizations/${orgId}/grants/${grant.json().id}/revoke`, headers: { cookie: adminCookie } })).statusCode).toBe(200);
+      expect((await app.inject({ method: "POST", url: `/organizations/${orgId}/exports/${historical.id}/prepare`, headers: { cookie: reviewerCookie }, payload: {} })).statusCode).toBe(403);
+      expect((await getExportRow(historical.id))?.status).toBe("failed");
+      await rawDb.update(schema.documents).set({ status: "approved" }).where(eq(schema.documents.id, doc.id));
+      const concurrent = await Promise.all([prepare(), prepare()]);
+      expect(concurrent.map(r => r.statusCode).sort()).toEqual(expect.arrayContaining([200]));
+      for (const res of concurrent) {
+        expect([200,409]).toContain(res.statusCode);
+        if (res.statusCode === 409) expect(res.json().error).toBe("export_preparation_conflict");
+      }
+      const stable = await getExportRow(historical.id);
+      expect(stable?.status).toBe("completed");
+      expect((await prepare()).json().completedAt).toBe(stable?.completedAt?.toISOString());
+      const events = (await getAuditsByOrg(orgId)).filter(e => e.entityId === historical.id);
+      expect(events.filter(e => e.action === "export.completed")).toHaveLength(1);
+      expect(events.filter(e => e.action === "export.generation_failed")).toHaveLength(1);
+      expect((await getCsv(adminCookie, orgId, historical.id)).statusCode).toBe(200);
+      expect((await getCsv(adminCookie, orgId, historical.id, "?file=lines")).statusCode).toBe(200);
+      expect((await getExportRow(historical.id))?.completedAt).toEqual(stable?.completedAt);
+      const otherOrg = await createOrg("F11b ajena");
+      expect((await app.inject({ method: "POST", url: `/organizations/${otherOrg}/exports/${historical.id}/prepare`, headers: { cookie: adminCookie }, payload: {} })).statusCode).toBe(404);
+      expect((await getExportRow(historical.id))?.completedAt).toEqual(stable?.completedAt);
+    });
+
     it.each([0, 999, 1000, 1001])("F11a: %i líneas reales, COUNT completo y descarga íntegra", async count => {
       const orgId = await createOrg("F11a líneas");
       const [doc] = await rawDb.insert(schema.documents).values({
@@ -585,8 +716,8 @@ describe.skipIf(!process.env.DOCFLOW_B6_TEST)(
         const audits = await getAuditsByOrg(orgId);
         expect(audits.filter(e => e.action === "export.downloaded")).toHaveLength(1);
         expect(audits.filter(e => e.action === "export.generation_failed")).toHaveLength(1);
-        expect((await getExportRow(id))?.status).toBe("pending");
-        expect((await getExportRow(id))?.completedAt).toBeNull();
+        expect((await getExportRow(id))?.status).toBe("completed");
+        expect((await getExportRow(id))?.completedAt).toBeInstanceOf(Date);
       } finally {
         if (previous === undefined) delete process.env.DOCFLOW_CSV_MAX_BYTES;
         else process.env.DOCFLOW_CSV_MAX_BYTES = previous;
@@ -824,13 +955,13 @@ describe.skipIf(!process.env.DOCFLOW_B6_TEST)(
         (one.json() as { id: string }).id,
       );
       const pending = await getList(adminCookie, orgId, "?status=pending");
-      expect((pending.json() as { total: number }).total).toBe(2);
+      expect((pending.json() as { total: number }).total).toBe(0);
       const completed = await getList(
         adminCookie,
         orgId,
         "?status=completed",
       );
-      expect((completed.json() as { total: number }).total).toBe(0);
+      expect((completed.json() as { total: number }).total).toBe(2);
     });
 
     it("escape de fórmulas: =cmd escapado, -100 texto escapado, -100.00 intacto", async () => {

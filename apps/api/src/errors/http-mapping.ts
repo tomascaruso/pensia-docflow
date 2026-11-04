@@ -1,3 +1,4 @@
+import { ExportPreparationConflict } from "../services/export-preparation.js";
 import { ExportSelectionError } from "../services/export-selection.js";
 /**
  * DocFlow B1/B2 — Mapeo de errores de dominio (D9) a HTTP.
@@ -279,6 +280,7 @@ export function toHttp(error: unknown): HttpErrorBody | null {
   if (error instanceof DuplicateCandidateNotFoundError) {
     return NOT_FOUND;
   }
+  if (error instanceof ExportPreparationConflict) return { status: 409, code: "export_preparation_conflict", message: "La preparación coincidió con otra solicitud. Actualizá el listado." };
   if (error instanceof ExportForbiddenError) {
     return FORBIDDEN;
   }

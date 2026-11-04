@@ -262,8 +262,14 @@ export function createFakeDb(
               const matched = rowsOf(table).filter((row) =>
                 matches(row, pairs),
               );
+                const evaluated = Object.fromEntries(Object.entries(values).map(([key, value]) => {
+                  if (!(value instanceof SQL)) return [key, value];
+                  const expression = dialect.sqlToQuery(value);
+                  if (expression.sql !== "clock_timestamp()" || expression.params.length) throw new Error("fake-tx: valor UPDATE no soportado");
+                  return [key, new Date()];
+                }));
               for (const row of matched) {
-                Object.assign(row, values);
+                Object.assign(row, evaluated);
               }
               return {
                 returning: async (fields: Record<string, unknown>) =>
@@ -276,7 +282,7 @@ export function createFakeDb(
     },
     execute: async () => [],
   };
-  return {
+  const db: FakeDb = {
     ...client,
     tables,
     transaction: async (fn) => {
@@ -294,10 +300,13 @@ export function createFakeDb(
       }
     },
   };
+  Object.assign(client, { transaction: db.transaction });
+  return db;
 }
 
 
 interface FakeSelect extends Promise<FakeRow[]> {
+  for(mode: string): FakeSelect;
   where(condition: unknown): FakeSelect;
   leftJoin(table: unknown, condition: unknown): FakeSelect;
   orderBy(...order: unknown[]): FakeSelect;
@@ -514,6 +523,8 @@ function fakeSelect(fields: Record<string, unknown>, table: unknown, rowsOf: (ta
       Object.fromEntries(projections.map(({ alias, read }) => [alias, read(context)])));
   }
   const query = {
+    // Lock real únicamente en integración PostgreSQL.
+    for(mode: string) { if (mode !== "update") throw new Error("fake-tx: lock no soportado"); return query; },
     where(value: unknown) { condition = value; return query; },
     leftJoin(value: unknown, on: unknown) {
       if (joins.length >= 2) throw new Error("fake-tx: máximo dos LEFT JOIN");

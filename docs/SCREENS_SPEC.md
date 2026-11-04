@@ -366,8 +366,8 @@ responde 413 JSON, sin CSV parcial ni evento `export.downloaded`.
 Un archivo sin líneas conserva BOM y encabezado. El límite del archivo no
 garantiza un consumo exacto de RAM: también existen páginas, campos y buffers.
 
-F11a no cambia estados, `completed_at`, preparación ni reintentos. La deuda
-del ciclo de estados queda pendiente para F11b; descargar no certifica que
+F11a no cambia estados, `completed_at`, preparación ni reintentos. El ciclo
+de estados se implementa separadamente en F11b; descargar no certifica que
 el navegador haya terminado de recibir o guardar el archivo.
 
 **Propósito:** exportar solo aprobados, y dejar registro de cada
@@ -408,10 +408,29 @@ rechaza la operación completa, sin exportación ni ítems parciales.
 No se inventa ninguna
 transición de salida de `approved`.
 
-**Estados:** en preparación → indicador de progreso sin porcentaje
-inventado ("Preparando exportación…"); lista → enlaces de descarga;
-error → mensaje concreto y "Reintentar"; vacío → "Todavía no hay
-exportaciones" + "Nueva exportación".
+**Estados F11b:** `pending` histórico se muestra “Pendiente de preparar” y
+“Preparar ambos CSV”; `failed`, “Error” y “Reintentar preparación”. Solo durante
+la petición se muestra “Preparando exportación…”, sin simular un worker.
+“Lista” significa: ambos CSV validados; se generan al descargar. Los bytes no
+se archivan ni se acredita recepción. Una creación exitosa devuelve completed
+con fecha de preparación obtenida con clock_timestamp(), después de validar
+principal y líneas íntegros con sus presupuestos independientes de F11a.
+Exportación, ítems, export.created y un único export.completed se confirman
+atómicamente; cualquier fallo inicial los revierte y no deja una fila failed.
+
+La preparación explícita usa únicamente selección y criterios persistidos.
+Bloquea por organización/ID y revalida permiso; usa savepoint para confirmar
+failed junto a export.generation_failed en fallos controlados. Si falla auditoría,
+conexión o confirmación se conserva el estado anterior. Serialización 40001 se
+expone como 409 export_preparation_conflict, nunca como failed persistido.
+Completed es idempotente, sin cambiar fecha ni duplicar eventos. Un completed
+histórico con completed_at NULL mantiene NULL. No hay backfill inventado.
+Las acciones requieren el permiso existente y refrescan el listado también al
+fallar. Recargar el listado no prepara. Cada descarga conserva controles,
+regenera y audita una respuesta preparada para enviar con el código histórico
+export.downloaded; no modifica estado ni completed_at. Un fallo posterior de
+descarga no invalida una preparación confirmada. Se mantienen 400/403/404/409,
+413/500 y 422 document_not_approved en creación.
 
 ### Contrato implementado F10b — selección paginada
 
@@ -575,3 +594,21 @@ muestran sus valores vigentes (10 MB, 20 páginas, tolerancia
 inicial 0,01); no hay estado vacío de configuración. Las tarjetas
 de integración sin proveedor definido muestran "Pendiente de
 definir", que es un estado informativo, no un error.
+
+### Precisión F11b — permiso después de una espera
+
+La preparación RR adquiere la fila por organización/ID con NOWAIT. Si encuentra
+contención (55P03), se aborta esa instantánea; una transacción READ COMMITTED
+espera la fila sin autorizar, preparar ni escribir. Tras liberarla se inicia
+otra RR y se intenta adquirir NOWAIT, con un máximo de tres intentos; contención
+persistente o serialización responde 409 export_preparation_conflict. Así una
+revocación confirmada antes de liberar la espera es visible en la autorización
+posterior, sin perder la instantánea consistente para ambos CSV ni usar otra
+conexión para consultar permisos mientras se retiene la transacción bloqueada.
+
+La denegación interna se audita después del rollback como export.prepare_denied.
+El preHandler denegado no entra al servicio: un intento no se registra dos veces.
+No se persiste failed por una denegación. Política D8 existente: si falla el
+escritor de auditoría, se conserva el 403 y el estado anterior; en ese caso no se
+puede afirmar que el intento haya quedado registrado. La etiqueta es “Intentó
+preparar una exportación” y conserva el indicador “Intento denegado”.

@@ -19,7 +19,7 @@ import { EXPORTS_PAGE_SIZE } from "../../hooks/useExports";
 export function exportStatusLabel(status: ExportStatus): string {
   switch (status) {
     case "pending":
-      return "En preparación";
+      return "Pendiente de preparar";
     case "completed":
       return "Lista";
     case "failed":
@@ -83,6 +83,8 @@ interface ExportsTableProps {
   canExport?: boolean;
   onPageChange: (page: number) => void;
   onRetry: () => void;
+  onPrepare?: (id: string) => void;
+  preparingId?: string;
   onCreateClick: () => void;
 }
 
@@ -116,14 +118,8 @@ function truncateUserId(requestedBy: string | null | undefined): ReactNode {
  * estado (En preparación / Lista / Error) y acciones
  * (Descargar CSV principal, Descargar CSV de líneas).
  * La descarga es un enlace directo al endpoint /csv del
- * backend (el spec pide "enlaces de descarga"; la generación
- * es síncrona en el backend, así que los enlaces están
- * disponibles en cualquier estado — el estado no muta, deuda
- * B6, y ocultar los enlaces en "pending" dejaría la función
- * muerta). "Cantidad de filas" del spec sí se implementa en
- * F10a (columna "Líneas" con lineCount del DTO); "Ver detalle"
- * sigue sin endpoint. "Reintentar" en filas con error vuelve
- * a pedir la lista (no hay endpoint de reintento).
+ * backend. Los históricos conservan sus enlaces y pueden preparar ambos
+ * archivos explícitamente; recargar el listado es una acción separada.
  * Pulido F8: badges de estado (ítem 1), vacío con ícono +
  * CTA (ítem 2), fecha con hora (ítem 3), íconos de descarga
  * (ítem 6), UUID truncado (ítem 7).
@@ -138,6 +134,8 @@ export function ExportsTable({
   canExport = true,
   onPageChange,
   onRetry,
+  onPrepare,
+  preparingId,
   onCreateClick,
 }: ExportsTableProps) {
   if (isPending) {
@@ -187,6 +185,7 @@ export function ExportsTable({
 
   return (
     <div className="flex flex-col gap-4">
+      <p>Lista significa: Ambos CSV validados; se generan al descargar</p>
       <table className="w-full table-fixed border-collapse border border-border text-sm">
         <colgroup>
           <col style={{ width: "14%" }} />
@@ -225,7 +224,7 @@ export function ExportsTable({
                 <ExportStatusBadge status={exp.status} />
                 {exp.status === "pending" && (
                   <p className="text-slate-500">
-                    Preparando exportación…
+                    Todavía no se verificaron ambos CSV.
                   </p>
                 )}
               </td>
@@ -266,13 +265,14 @@ export function ExportsTable({
                       </span>
                     </>
                   )}
-                  {exp.status === "failed" && (
+                  {exp.status !== "completed" && (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={onRetry}
+                      disabled={!canExport || preparingId !== undefined}
+                      onClick={() => onPrepare?.(exp.id)}
                     >
-                      Reintentar
+                      {preparingId === exp.id ? "Preparando exportación…" : exp.status === "failed" ? "Reintentar preparación" : "Preparar ambos CSV"}
                     </Button>
                   )}
                 </div>
