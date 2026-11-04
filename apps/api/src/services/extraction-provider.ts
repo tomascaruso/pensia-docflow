@@ -19,6 +19,7 @@
  */
 export interface RawExtractionField {
   key: string;
+  conflictingValues?: Array<{ value: string; page: number }>;
   rawValue: string | null;
   confidence: number | null;
   page: number | null;

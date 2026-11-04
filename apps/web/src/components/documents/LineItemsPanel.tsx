@@ -47,6 +47,7 @@ export function LineItemsPanel({ lineItems }: LineItemsPanelProps) {
   return (
     <section>
       <h2>Líneas</h2>
+      {sorted.some(l => l.quantity === null || l.unitPrice === null) ? <p role="alert">Hay líneas sin cantidad o precio unitario. Se conservan como ausentes, sin deducir valores. La edición de líneas no está disponible; los CSV conservarán las celdas vacías.</p> : null}
       <table>
         <thead>
           <tr>

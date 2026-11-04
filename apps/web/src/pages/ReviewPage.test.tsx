@@ -60,6 +60,7 @@ function field() {
 interface Harness {
   detailStatus?: string;
   validations?: unknown[];
+  fields?: unknown[];
   candidates?: unknown[];
   lines?: unknown[];
   listDocs?: Array<{ id: string }>;
@@ -91,7 +92,7 @@ function renderReview(harness: Partial<Harness> = {}) {
     if (url.includes("/documents/doc-1") && method === "GET") {
       return jsonResponse(200, {
         document: doc(harness.detailStatus ?? "needs_review"),
-        fields: [field()],
+        fields: harness.fields ?? [field()],
         lines: harness.lines ?? [],
         validations: harness.validations ?? [],
         candidates: harness.candidates ?? [],
@@ -395,4 +396,13 @@ describe("ReviewPage", () => {
       screen.queryByRole("heading", { name: "Líneas" }),
     ).not.toBeInTheDocument();
   });
+});
+
+
+it("aprobado recargado conserva evidencia del conflicto resuelto en solo lectura", async () => {
+  const evidence = '[{"value":"7000.00","page":1},{"value":"14000.00","page":2}]';
+  renderReview({ detailStatus: "approved", fields: [{ ...field(), fieldKey: "total_amount", extractedValue: evidence, normalizedValue: null, correctedValue: "14000.00", approvedValue: "14000.0000", isUncertain: false }] });
+  expect(await screen.findByText(/Conflicto original resuelto por corrección humana/)).toHaveTextContent(evidence);
+  expect(screen.getByLabelText("Total")).toHaveValue("14000.00");
+  expect(screen.getByLabelText("Total")).toBeDisabled();
 });

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { createOpenAiExtractionProvider, type OpenAiInvoicePage } from "../services/extraction-openai.js";
 /**
  * DocFlow B5 — Test de integración con Postgres real, storage
  * local real y Better Auth real.
@@ -715,6 +717,78 @@ describe.skipIf(!process.env.DOCFLOW_B5_TEST)(
         expect(await getDecisions(id)).toHaveLength(0);
       },
     );
+
+    it("conflicto real archivado: bloqueo, rollback ajeno, corrección, recarga y CSV", async () => {
+      const orgId = await createOrg("Replay total conflict");
+      await addReviewer(orgId);
+      const pages = (JSON.parse(readFileSync(new URL("../services/fixtures/multipage-totals.json", import.meta.url), "utf8")) as { pages: OpenAiInvoicePage[] }).pages;
+      const pdf = await makePdf("local replay only");
+      const { id } = await upload(orgId, "replay.pdf", pdf);
+      let index = 0;
+      const extractor = createOpenAiExtractionProvider(async () => pdf, { apiKey: "fake-local" }, {
+        readFile: async () => pdf, rasterizePdf: async () => pages.map(() => new Uint8Array([1])),
+        completePage: async () => { const parsed = pages[index++]; return { parsed, raw: JSON.stringify(parsed), usage: { promptTokens: 0, completionTokens: 0 } }; },
+      });
+      await processUntilDoc(id, j => j?.status === "completed", workerDeps({ extractor, providerName: "local-replay" }), () => new Date());
+      const before = await getFields(id);
+      expect((await getDoc(id))?.totalAmount).toBeNull();
+      expect(before.find(f => f.fieldKey === "total_amount")?.extractedValue).toContain("14000.00");
+      expect((await decide(reviewerCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "14000.00" }] })).statusCode).toBe(403);
+      expect((await decide(adminCookie, orgId, id, { decision: "approved", resolved: true })).statusCode).toBe(409);
+      expect((await decide(adminCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "inválido" }] })).statusCode).toBe(400);
+      for (const evidence of ["invalid", JSON.stringify([{ value: "7.000,00", page: 1 }, { value: "7000.0000", page: 2 }])]) {
+        await rawDb.update(schema.documentFields).set({ extractedValue: evidence })
+          .where(and(eq(schema.documentFields.documentId, id), eq(schema.documentFields.fieldKey, "total_amount")));
+        expect((await decide(adminCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "14000.00" }] })).statusCode).toBe(409);
+        expect((await getFields(id)).find(f => f.fieldKey === "total_amount")?.correctedValue).toBeNull();
+        expect((await getValidations(id)).find(v => v.ruleCode === "total_conflict")?.status).toBe("active");
+      }
+      await rawDb.update(schema.documentFields).set({ extractedValue: before.find(f => f.fieldKey === "total_amount")!.extractedValue })
+        .where(and(eq(schema.documentFields.documentId, id), eq(schema.documentFields.fieldKey, "total_amount")));
+      const other = await upload(orgId, "pending-peer.pdf", await makePdf("local pending peer"));
+      const [candidate] = await rawDb.insert(schema.duplicateCandidates).values({
+        documentId: id, candidateDocumentId: other.id, kind: "business_exact",
+        reasonCode: "BUSINESS_EXACT", matchedFieldsJson: {}, status: "pending",
+      }).returning({ id: schema.duplicateCandidates.id });
+      const pending = await decide(adminCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "14000.00" }] });
+      expect(pending.statusCode).toBe(409);
+      expect((pending.json() as { error: string }).error).toBe("decision_blocked_by_candidates");
+      expect(await getFields(id)).toEqual(before);
+      await rawDb.delete(schema.duplicateCandidates).where(eq(schema.duplicateCandidates.id, candidate!.id));
+      await rawDb.insert(schema.documentValidations).values({ documentId: id, ruleCode: "unrelated", severity: "error", message: "test blocker", status: "active" });
+      expect((await decide(adminCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "14000.00" }] })).statusCode).toBe(409);
+      expect(await getFields(id)).toEqual(before);
+      expect(await getDecisions(id)).toHaveLength(0);
+      await rawDb.delete(schema.documentValidations).where(and(eq(schema.documentValidations.documentId, id), eq(schema.documentValidations.ruleCode, "unrelated")));
+      await grantApprove(orgId);
+      await rawDb.execute(sql.raw(`CREATE FUNCTION test_total_audit_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.entity_id = '${id}' AND NEW.action = 'document.approved' THEN RAISE EXCEPTION 'injected audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER test_total_audit_fail BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION test_total_audit_fail();`));
+      try {
+        expect((await decide(reviewerCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "14000.00" }] })).statusCode).toBe(500);
+        expect(await getFields(id)).toEqual(before);
+        expect((await getDoc(id))?.totalAmount).toBeNull();
+        expect((await getValidations(id)).find(v => v.ruleCode === "total_conflict")?.status).toBe("active");
+        expect(await getDecisions(id)).toHaveLength(0);
+      } finally { await rawDb.execute(sql.raw("DROP TRIGGER test_total_audit_fail ON audit_events; DROP FUNCTION test_total_audit_fail();")); }
+      const res = await decide(reviewerCookie, orgId, id, { decision: "approved", corrections: [{ fieldKey: "total_amount", correctedValue: "14000.00" }] });
+      expect(res.statusCode).toBe(200);
+      expect((await getDoc(id))?.totalAmount).toBe("14000.0000");
+      const total = (await getFields(id)).find(f => f.fieldKey === "total_amount");
+      expect(total).toMatchObject({ extractedValue: before.find(f => f.fieldKey === "total_amount")?.extractedValue, correctedValue: "14000.00", approvedValue: "14000.0000", correctedBy: reviewerUserId });
+      expect(total?.correctedAt).toBeInstanceOf(Date);
+      expect((await getDoc(id))?.status).toBe("approved");
+      expect((await getValidations(id)).some(v => v.status === "exception_accepted")).toBe(false);
+      const conflict = (await getValidations(id)).find(v => v.ruleCode === "total_conflict");
+      expect(conflict).toBeUndefined();
+      expect(total?.isUncertain).toBe(false);
+      expect((await getAudits(id)).filter(a => a.action === "document.approved")).toHaveLength(1);
+      const exported = await app.inject({ method: "POST", url: `/organizations/${orgId}/exports`, headers: { cookie: adminCookie, "content-type": "application/json" }, payload: JSON.stringify({ documentIds: [id] }) });
+      expect(exported.statusCode).toBe(201);
+      const csv = await app.inject({ method: "GET", url: `/organizations/${orgId}/exports/${exported.json().id}/csv?file=main`, headers: { cookie: adminCookie } });
+      expect(csv.statusCode).toBe(200);
+      expect(csv.body).toContain("14000.0000");
+      const lines = await rawDb.select().from(schema.extractionLines).where(eq(schema.extractionLines.documentId, id));
+      expect(lines.filter(l => l.quantity === null && l.unitPrice === null)).toHaveLength(7);
+    });
 
     it("coherencia 422: corrección sin reflejo en resueltos", async () => {
       const orgId = await createOrg("Org B5 coherencia");

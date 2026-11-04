@@ -100,17 +100,17 @@ export function ReviewPage() {
       jobs.find((job) => job.lastError !== null)?.lastError ?? null;
     const decision = decisions.length > 0 ? decisions[decisions.length - 1] : null;
     return (
-      <ReviewStates
-        document={document}
-        orgId={orgId}
-        lastError={lastError}
-        decision={decision ?? undefined}
-      />
+      <div>
+        <ReviewStates document={document} orgId={orgId} lastError={lastError} decision={decision ?? undefined} />
+        {status === "approved" ? <ReviewFields fields={fields.filter(f => f.fieldKey === "total_amount" && f.extractedValue?.startsWith("["))} pending={[]} onChange={() => {}} readOnly /> : null}
+      </div>
     );
   }
 
   // needs_review: layout completo.
-  const blocking = computeBlocking(validations, candidates);
+  const explicitTotal = pendingCorrections.some(c => c.fieldKey === "total_amount" && /^-?\d+(\.\d{1,4})?$/.test(c.correctedValue));
+  const effectiveValidations = validations.filter(v => !(explicitTotal && v.ruleCode === "total_conflict" && v.fieldKey === "total_amount"));
+  const blocking = computeBlocking(effectiveValidations, candidates);
   const list = pendingList.data?.documents ?? [];
   const index = list.findIndex((item) => item.id === docId);
   const prev = index > 0 ? list[index - 1] : undefined;
@@ -168,7 +168,7 @@ export function ReviewPage() {
         prevDisabled={prev === undefined}
         nextDisabled={next === undefined}
       />
-      <BlockingBar validations={validations} candidates={candidates} />
+      <BlockingBar validations={effectiveValidations} candidates={candidates} />
       <div>
         <DocumentViewer
           orgId={orgId}
